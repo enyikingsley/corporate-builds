@@ -262,27 +262,41 @@ if uploaded_files:
         STANDARD_COLS = {'time': 'Time', 'date': 'Date', 'door name': 'Door Name', 'event description': 'Event Description', 'personnel id': 'Personnel ID', 'first name': 'First Name', 'last name': 'Last Name'}
         
         def normalize_columns(df_in):
+            # FIRST: Drop any native duplicate columns to completely avoid 'DataFrame' object has no attribute 'str' errors
+            df_in = df_in.loc[:, ~df_in.columns.duplicated(keep='first')].copy()
+            
             col_map = {}
+            seen = set()
+            
             for c in df_in.columns:
                 cl = str(c).lower().strip()
-                if cl in STANDARD_COLS:
-                    col_map[c] = STANDARD_COLS[cl]
-                elif 'door' in cl or 'reader' in cl:
-                    col_map[c] = 'Door Name'
-                elif 'time' in cl and 'date' in cl:
-                    col_map[c] = 'Time'
-                elif 'event time' in cl or cl == 'datetime' or cl == 'date time':
-                    col_map[c] = 'Time'
-                elif 'event' in cl and 'desc' in cl:
-                    col_map[c] = 'Event Description'
-                elif 'pin' in cl or 'personnel' in cl or 'emp no' in cl or 'emp id' in cl:
-                    col_map[c] = 'Personnel ID'
-                elif 'first name' in cl or 'fname' in cl:
-                    col_map[c] = 'First Name'
-                elif 'last name' in cl or 'lname' in cl:
-                    col_map[c] = 'Last Name'
-                else:
-                    col_map[c] = str(c).strip()
+                tgt = None
+                
+                # Match required columns flexibly
+                if cl in STANDARD_COLS: tgt = STANDARD_COLS[cl]
+                elif 'door' in cl or 'reader' in cl: tgt = 'Door Name'
+                elif 'time' in cl and 'date' in cl: tgt = 'Time'
+                elif 'event time' in cl or cl == 'datetime' or cl == 'date time': tgt = 'Time'
+                elif 'event' in cl and 'desc' in cl: tgt = 'Event Description'
+                elif 'pin' in cl or 'personnel' in cl or 'emp no' in cl or 'emp id' in cl: tgt = 'Personnel ID'
+                elif 'first name' in cl or 'fname' in cl: tgt = 'First Name'
+                elif 'last name' in cl or 'lname' in cl: tgt = 'Last Name'
+                else: tgt = str(c).strip()
+
+                # CRITICAL: Prevent duplicate names which turn Series into DataFrames downstream
+                if tgt in seen:
+                    orig = str(c).strip()
+                    if orig in seen:
+                        idx = 1
+                        while f"{orig}_{idx}" in seen:
+                            idx += 1
+                        tgt = f"{orig}_{idx}"
+                    else:
+                        tgt = orig
+                        
+                col_map[c] = tgt
+                seen.add(tgt)
+                
             return df_in.rename(columns=col_map)
 
         def clean_id(val):
@@ -332,6 +346,9 @@ if uploaded_files:
             st.stop()
 
         df = pd.concat(all_dfs, ignore_index=True)
+        # Extra safety check to drop any duplicates resulting from vertical concatenation
+        df = df.loc[:, ~df.columns.duplicated(keep='first')].copy()
+
         if 'Personnel ID' in df.columns:
             df['Personnel ID'] = df['Personnel ID'].apply(clean_id)
             df = df[df['Personnel ID'] != '0']
@@ -395,7 +412,8 @@ if uploaded_files:
 
         # -- Load Rosters --
         def load_simple_excel(f_obj):
-            return pd.read_csv(f_obj) if f_obj.name.endswith('.csv') else pd.read_excel(f_obj)
+            df_ret = pd.read_csv(f_obj) if f_obj.name.endswith('.csv') else pd.read_excel(f_obj)
+            return df_ret.loc[:, ~df_ret.columns.duplicated(keep='first')].copy()
 
         df_roster, df_std_roster, soc_ids_from_roster = None, None, set()
         
