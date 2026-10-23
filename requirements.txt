@@ -3,3 +3,4 @@ pandas
 fpdf
 python-docx
 openpyxl
+pyotp
