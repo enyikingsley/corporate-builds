@@ -5,3 +5,4 @@ python-docx
 openpyxl
 pyotp
 qrcode
+python-calamine
