@@ -552,7 +552,7 @@ if uploaded_files:
                         late_agg = late_agg[['Personnel ID', 'Full Name', 'Times_Late', 'Dates_Late', 'Times_In']]
                         late_agg.columns = ['Personnel ID', 'Full Name', 'Times Late', 'Dates Late', 'Times In']
 
-                    st.dataframe(late_agg, hide_index=True, uwidth='stretch')
+                    st.dataframe(late_agg, hide_index=True, use_container_width=True)
 
                     with ex_col:
                         render_export_dropdown(
@@ -697,7 +697,7 @@ if uploaded_files:
                         "**Weekly Detail** — badge-in dates & times attended, and Mon–Fri dates "
                         "absent, per person per week."
                     )
-                    st.dataframe(_detail_view, hide_index=True, width='stretch')
+                    st.dataframe(_detail_view, hide_index=True, use_container_width=True)
 
                     # Per-person summary
                     st.markdown("**Summary** — aggregate compliance per employee.")
@@ -724,7 +724,7 @@ if uploaded_files:
                         'Personnel ID', 'Full Name', 'Expected/Week',
                         'Weeks Non-Compliant', 'Total Deficit Days', 'Non-Compliant Weeks'
                     ]
-                    st.dataframe(_summary, hide_index=True, width='stretch')
+                    st.dataframe(_summary, hide_index=True, use_container_width=True)
 
                     with _ex2_col:
                         render_export_dropdown(
@@ -866,7 +866,7 @@ if uploaded_files:
                         })
                         .sort_values(['Personnel ID', 'Shift Date'])
                     )
-                    st.dataframe(_sc_display, hide_index=True, width='stretch')
+                    st.dataframe(_sc_display, hide_index=True, use_container_width=True)
 
                     with _sc_ex_col:
                         render_export_dropdown(
@@ -901,7 +901,7 @@ if uploaded_files:
                     'Personnel ID', 'Full Name', 'Scheduled Shifts',
                     'On Time', 'Late', 'Absent', 'Total Mins Late'
                 ]
-                st.dataframe(_soc_summary, hide_index=True, width='stretch')
+                st.dataframe(_soc_summary, hide_index=True, use_container_width=True)
 
                 render_export_dropdown(
                     _soc_summary, "All Time",
