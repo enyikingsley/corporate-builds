@@ -161,7 +161,7 @@ if os.path.exists(TUNNEL_CACHE_FILE):
     except: pass
 
 st.markdown(get_header_html("Attendance Analytics", motto="Automated Latecomer Tracking System"), unsafe_allow_html=True)
-st.markdown("""<div class="custom-alert">Upload access logs alongside the <strong>Staff Master List</strong> and <strong>SOC Schedule</strong> to generate reports. The system evaluates <strong>Main entrance Upfloor</strong> and <strong>Main entrance Ground Flr</strong> only. A person is marked Early if their absolute single first scan of the day at these doors is strictly <strong>&le; 08:31:00 AM</strong>.</div>""", unsafe_allow_html=True)
+st.markdown("""<div class="custom-alert">Upload access logs alongside the <strong>Staff Master List</strong> and <strong>SOC Schedule</strong> to generate reports. The system strictly isolates the <strong>absolute single first valid entrance scan</strong> per day on <strong>Main entrance Upfloor / Ground Flr</strong>. Anyone registering at <strong>08:31:00 AM</strong> or later is logged as Late.</div>""", unsafe_allow_html=True)
 
 # ==========================================
 # 3. UPLOADS & EXPORT HELPERS
@@ -201,7 +201,6 @@ def render_export_dropdown(dataframe, period_label, report_title, report_subtitl
         
         # PDF (Fixed Unicode Emoji Crash)
         def clean_pdf_text(txt):
-            # Strip emojis so FPDF doesn't crash on latin-1 encoding
             return str(txt).replace('✅', '').replace('⚠️', '').replace('🚫', '').strip().encode('latin-1', 'ignore').decode('latin-1')
 
         pdf = FPDF(orientation='L')
@@ -351,8 +350,9 @@ if uploaded_files:
         # -- RULE 4: STRICT SINGLE EARLIEST ENTRY LOGIC --
         df_first = df.sort_values('Parsed_Time').drop_duplicates(subset=['Date', 'Personnel ID'], keep='first').copy()
         
+        # NOTE: Using strictly '<' so 08:31:00 exactly evaluates to False (meaning they are Late)
         CUTOFF_TIME = datetime.time(8, 31, 0)
-        df_first['Is_Early'] = df_first['Time_Only'] <= CUTOFF_TIME
+        df_first['Is_Early'] = df_first['Time_Only'] < CUTOFF_TIME
 
         # -- Load Rosters --
         def load_simple_excel(f_obj):
@@ -400,14 +400,14 @@ if uploaded_files:
             name_cols = [c for c in ['First Name', 'Last Name'] if c in df_std_first.columns]
             df_std_first['Full Name'] = df_std_first[name_cols].fillna('').astype(str).apply(lambda r: ' '.join(r).strip(), axis=1) if name_cols else ''
             
-            WORKDAYS = {0, 1, 2, 3, 4} # Mon-Fri
+            WORKDAYS = {0, 1, 2, 3, 4} # Mon-Fri Only
             df_std_workday = df_std_first[df_std_first['Date_dt'].dt.dayofweek.isin(WORKDAYS)].copy()
             df_std_workday['Date_Str'] = df_std_workday['Date'].apply(lambda d: d.strftime('%Y-%m-%d'))
             df_std_workday['Time_Str'] = df_std_workday['Time_Only'].apply(lambda t: t.strftime('%H:%M:%S'))
-            
-            # ── 📋 Complete Daily Log (Transparency Check) ────────────────────
+
+            # ── Section 1: 📋 Complete Daily Log (Transparency Check) ────────
             st.markdown("### 📋 Daily Check-in Log (Earliest Scans)")
-            st.markdown("Shows the absolute earliest scan per person on the target doors, and whether they were **On Time** (≤ 08:31:00) or **Late**.")
+            st.markdown("Shows the absolute earliest scan per person on the target doors, and whether they were **On Time** (< 08:31:00) or **Late**.")
             
             df_std_workday['Status'] = df_std_workday['Is_Early'].apply(lambda x: '✅ On Time ' if x else '⚠️ Late ')
             
@@ -423,40 +423,57 @@ if uploaded_files:
             else:
                 st.info("No logs found for the selected period.")
 
-            # ── Late Arrivals ────────────────────────────────────────────────
             st.divider()
-            st.markdown("### ⚠️ Late Arrivals Summary")
 
+            # ── Section 2: ⚠️ Strictly Late Arrivals Counter View ────────────
+            st.markdown("### ⚠️ Late Arrivals Dashboard")
+            st.markdown("This view exclusively tracks standard staff who arrived at **08:31:00 AM or later**. It counts the number of infractions per person within the selected timeframe.")
+
+            # Isolate exclusively late records (where Is_Early is False)
             df_late = df_std_workday[~df_std_workday['Is_Early']].copy()
 
             if df_late.empty:
-                st.markdown('<div class="output-alert-box" style="background:#000047;border-left:5px solid #CAEEC8;padding:15px 20px;border-radius:6px;margin-bottom:1.5rem;"><h3 style="margin:0;color:#CAEEC8;">🏆 Perfect Attendance</h3><p style="margin:5px 0 0;color:white;">No standard staff checked in past 8:31 AM.</p></div>', unsafe_allow_html=True)
+                st.markdown('<div class="output-alert-box" style="background:#000047;border-left:5px solid #CAEEC8;padding:15px 20px;border-radius:6px;margin-bottom:1.5rem;"><h3 style="margin:0;color:#CAEEC8;">🏆 Perfect Attendance</h3><p style="margin:5px 0 0;color:white;">No standard staff checked in at or past 8:31 AM during this period.</p></div>', unsafe_allow_html=True)
             else:
-                st.markdown(f'<div class="output-alert-box" style="background:#000000;border:1px solid #CAEEC8;border-left:5px solid #CAEEC8;padding:15px 20px;border-radius:6px;margin-bottom:1.5rem;"><h3 style="margin:0;color:#CAEEC8;">⚠️ {len(df_late)} Late Check-in Record(s)</h3><p style="margin:5px 0 0;color:white;">Standard staff whose very first scan of the day at the target Main Entrances was past 08:31 AM.</p></div>', unsafe_allow_html=True)
-                
                 pf_col, ex_col = st.columns([4, 1])
-                with pf_col: df_late_f, period_label_late = period_filter(df_late.copy(), 'Date', 'Parsed_Time', 'std_late_period')
+                with pf_col: 
+                    # Allow user to pick All Time, Daily, Weekly, or Monthly. The counters will dynamically update.
+                    df_late_f, period_label_late = period_filter(df_late.copy(), 'Date', 'Parsed_Time', 'std_late_period')
                 
-                if not df_late_f.empty:
-                    late_agg = (df_late_f.sort_values(['Date', 'Time_Only']).groupby(['Personnel ID', 'Full Name'])
-                                .agg(Times_Late=('Date', 'nunique'), Dates_Late=('Date_Str', lambda x: ', '.join(x)), Times_In=('Time_Str', lambda x: ', '.join(x)))
-                                .reset_index().sort_values('Times_Late', ascending=False))
+                if df_late_f.empty:
+                    st.info("No late arrivals recorded for the specifically selected date/timeframe.")
+                else:
+                    # Group by personnel to generate counters and date strings
+                    late_agg = (df_late_f.sort_values(['Date', 'Time_Only'])
+                                .groupby(['Personnel ID', 'Full Name'])
+                                .agg(
+                                    Times_Late=('Date', 'nunique'),
+                                    Dates_Late=('Date_Str', lambda x: ', '.join(x)),
+                                    Times_In=('Time_Str', lambda x: ', '.join(x))
+                                )
+                                .reset_index()
+                                .sort_values('Times_Late', ascending=False))
                     
-                    if df_roster is not None:
-                        late_agg = late_agg.merge(df_std_roster[['Personnel ID', 'Days_Per_Week']], on='Personnel ID', how='left')
-                        late_agg['Days_Per_Week'] = late_agg['Days_Per_Week'].fillna('–')
-                        late_agg = late_agg[['Personnel ID', 'Full Name', 'Days_Per_Week', 'Times_Late', 'Dates_Late', 'Times_In']]
-                        late_agg.columns = ['Personnel ID', 'Full Name', 'Expected/Week', 'Times Late', 'Dates Late', 'Times In']
-                    else:
-                        late_agg = late_agg[['Personnel ID', 'Full Name', 'Times_Late', 'Dates_Late', 'Times_In']]
-                        late_agg.columns = ['Personnel ID', 'Full Name', 'Times Late', 'Dates Late', 'Times In']
+                    late_agg.rename(columns={
+                        'Times_Late': 'Total Times Late',
+                        'Dates_Late': 'Dates Late',
+                        'Times_In': 'Exact Arrival Times'
+                    }, inplace=True)
 
+                    # Show dynamic banner of total incidents
+                    total_incidents = late_agg['Total Times Late'].sum()
+                    st.markdown(f'<div class="output-alert-box" style="background:#000000;border:1px solid #CAEEC8;border-left:5px solid #CAEEC8;padding:15px 20px;border-radius:6px;margin-bottom:1.5rem;"><h3 style="margin:0;color:#CAEEC8;">⚠️ {len(late_agg)} Personnel Late ({total_incidents} Total Incidents)</h3><p style="margin:5px 0 0;color:white;">Showing late count metrics for {period_label_late}.</p></div>', unsafe_allow_html=True)
+
+                    # Display clean table
                     st.dataframe(late_agg, hide_index=True, use_container_width=True)
-                    with ex_col: render_export_dropdown(late_agg, period_label_late, "Standard Staff Late Arrivals", "Personnel mapped to first scan past 08:31 at Main Entrances.", [20, 40, 15, 15, 80, 80], "std_late")
+                    
+                    with ex_col: 
+                        render_export_dropdown(late_agg, period_label_late, "Standard Staff Late Arrivals", "Personnel mapped to first scan >= 08:31 at Main Entrances.", [20, 40, 20, 80, 80], "std_late")
 
-            # ── Weekly Attendance Compliance ──────────────────────────────────
             st.divider()
-            st.markdown("### Weekly Attendance Compliance — Standard Staff")
+
+            # ── Section 3: 📅 Weekly Attendance Compliance ────────────────────
+            st.markdown("### 📅 Weekly Attendance Compliance (Days in Office)")
 
             if df_roster is None:
                 st.info("Upload the Standard Staff Master List to enable weekly compliance tracking.")
@@ -522,7 +539,9 @@ if uploaded_files:
                     _summary = _summary.sort_values('Total_Deficit', ascending=False)
                     _summary.columns = ['Personnel ID', 'Full Name', 'Expected/Week', 'Weeks Non-Compliant', 'Total Deficit Days', 'Non-Compliant Weeks']
                     st.dataframe(_summary, hide_index=True, use_container_width=True)
-                    with _ex2_col: render_export_dropdown(_detail_view, "All Time", "Weekly Attendance Compliance", "Standard staff weekly attendance.", [15, 35, 12, 12, 12, 8, 15, 60, 60], "std_compliance")
+                    
+                    with _ex2_col: 
+                        render_export_dropdown(_detail_view, "All Time", "Weekly Attendance Compliance", "Standard staff weekly attendance.", [15, 35, 12, 12, 12, 8, 15, 60, 60], "std_compliance")
 
         with tab_soc:
             if df_soc is None:
