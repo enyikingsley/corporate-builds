@@ -358,20 +358,39 @@ if uploaded_files:
         def load_simple_excel(f_obj):
             return pd.read_csv(f_obj) if f_obj.name.endswith('.csv') else pd.read_excel(f_obj)
 
-        df_roster, soc_ids_from_roster = None, set()
+        df_roster, df_std_roster, soc_ids_from_roster = None, None, set()
+        
         if roster_file:
-            df_roster = load_simple_excel(roster_file)
-            col_map = {c: 'Personnel ID' if 'personnel' in c.lower() or c.lower() == 'id' else ('Expected Days' if 'expected' in c.lower() or 'days' in c.lower() else c) for c in df_roster.columns}
-            df_roster = df_roster.rename(columns=col_map)
-            if 'Personnel ID' in df_roster.columns and 'Expected Days' in df_roster.columns:
+            df_roster_temp = load_simple_excel(roster_file)
+            
+            # Fuzzy match columns to avoid silent crashes
+            col_map = {}
+            for c in df_roster_temp.columns:
+                cl = str(c).lower().strip()
+                if 'personnel' in cl or 'id' in cl or 'pin' in cl or 'employee' in cl:
+                    if 'Personnel ID' not in col_map.values():
+                        col_map[c] = 'Personnel ID'
+                elif 'expected' in cl or 'days' in cl or 'work' in cl:
+                    if 'Expected Days' not in col_map.values():
+                        col_map[c] = 'Expected Days'
+                        
+            df_roster = df_roster_temp.rename(columns=col_map)
+            
+            if 'Personnel ID' in df_roster.columns:
                 df_roster['Personnel ID'] = df_roster['Personnel ID'].apply(clean_id)
-                df_roster['Expected Days'] = df_roster['Expected Days'].astype(str).str.strip()
-                soc_mask = df_roster['Expected Days'].str.upper() == 'SOC'
-                soc_ids_from_roster = set(df_roster.loc[soc_mask, 'Personnel ID'].unique())
-                df_std_roster = df_roster[~soc_mask].copy()
-                df_std_roster['Days_Per_Week'] = pd.to_numeric(df_std_roster['Expected Days'], errors='coerce')
-                df_std_roster = df_std_roster.dropna(subset=['Days_Per_Week']).copy()
-                df_std_roster['Days_Per_Week'] = df_std_roster['Days_Per_Week'].astype(int)
+                
+                # Check for SOC and construct std_roster safely even if Expected Days is completely missing
+                if 'Expected Days' in df_roster.columns:
+                    df_roster['Expected Days'] = df_roster['Expected Days'].astype(str).str.strip()
+                    soc_mask = df_roster['Expected Days'].str.upper() == 'SOC'
+                    soc_ids_from_roster = set(df_roster.loc[soc_mask, 'Personnel ID'].unique())
+                    df_std_roster = df_roster[~soc_mask].copy()
+                    df_std_roster['Days_Per_Week'] = pd.to_numeric(df_std_roster['Expected Days'], errors='coerce').fillna(5).astype(int)
+                else:
+                    df_std_roster = df_roster.copy()
+                    df_std_roster['Days_Per_Week'] = 5 # Default to 5 expected days if the column doesn't exist
+            else:
+                st.warning("Master List is missing a recognizable ID column (e.g., 'Personnel ID'). Weekly compliance will be disabled.")
 
         df_soc = None
         if soc_file:
@@ -429,7 +448,6 @@ if uploaded_files:
             st.markdown("### ⚠️ Late Arrivals Dashboard")
             st.markdown("This view exclusively tracks standard staff who arrived at **08:31:00 AM or later**. It counts the number of infractions per person within the selected timeframe.")
 
-            # Isolate exclusively late records (where Is_Early is False)
             df_late = df_std_workday[~df_std_workday['Is_Early']].copy()
 
             if df_late.empty:
@@ -437,13 +455,11 @@ if uploaded_files:
             else:
                 pf_col, ex_col = st.columns([4, 1])
                 with pf_col: 
-                    # Allow user to pick All Time, Daily, Weekly, or Monthly. The counters will dynamically update.
                     df_late_f, period_label_late = period_filter(df_late.copy(), 'Date', 'Parsed_Time', 'std_late_period')
                 
                 if df_late_f.empty:
                     st.info("No late arrivals recorded for the specifically selected date/timeframe.")
                 else:
-                    # Group by personnel to generate counters and date strings
                     late_agg = (df_late_f.sort_values(['Date', 'Time_Only'])
                                 .groupby(['Personnel ID', 'Full Name'])
                                 .agg(
@@ -460,22 +476,31 @@ if uploaded_files:
                         'Times_In': 'Exact Arrival Times'
                     }, inplace=True)
 
-                    # Show dynamic banner of total incidents
+                    # If Roster was uploaded, merge in Expected Days, otherwise display without it safely
+                    if df_std_roster is not None and 'Days_Per_Week' in df_std_roster.columns:
+                        late_agg = late_agg.merge(df_std_roster[['Personnel ID', 'Days_Per_Week']], on='Personnel ID', how='left')
+                        late_agg['Days_Per_Week'] = late_agg['Days_Per_Week'].fillna('–')
+                        late_agg = late_agg[['Personnel ID', 'Full Name', 'Days_Per_Week', 'Total Times Late', 'Dates Late', 'Exact Arrival Times']]
+                        late_agg.columns = ['Personnel ID', 'Full Name', 'Expected/Week', 'Total Times Late', 'Dates Late', 'Exact Arrival Times']
+                        pdf_widths = [15, 30, 15, 15, 60, 60]
+                    else:
+                        late_agg = late_agg[['Personnel ID', 'Full Name', 'Total Times Late', 'Dates Late', 'Exact Arrival Times']]
+                        pdf_widths = [18, 40, 20, 60, 60]
+
                     total_incidents = late_agg['Total Times Late'].sum()
                     st.markdown(f'<div class="output-alert-box" style="background:#000000;border:1px solid #CAEEC8;border-left:5px solid #CAEEC8;padding:15px 20px;border-radius:6px;margin-bottom:1.5rem;"><h3 style="margin:0;color:#CAEEC8;">⚠️ {len(late_agg)} Personnel Late ({total_incidents} Total Incidents)</h3><p style="margin:5px 0 0;color:white;">Showing late count metrics for {period_label_late}.</p></div>', unsafe_allow_html=True)
 
-                    # Display clean table
                     st.dataframe(late_agg, hide_index=True, use_container_width=True)
                     
                     with ex_col: 
-                        render_export_dropdown(late_agg, period_label_late, "Standard Staff Late Arrivals", "Personnel mapped to first scan >= 08:31 at Main Entrances.", [20, 40, 20, 80, 80], "std_late")
+                        render_export_dropdown(late_agg, period_label_late, "Standard Staff Late Arrivals", "Personnel mapped to first scan >= 08:31 at Main Entrances.", pdf_widths, "std_late")
 
             st.divider()
 
             # ── Section 3: 📅 Weekly Attendance Compliance ────────────────────
             st.markdown("### 📅 Weekly Attendance Compliance (Days in Office)")
 
-            if df_roster is None:
+            if df_std_roster is None:
                 st.info("Upload the Standard Staff Master List to enable weekly compliance tracking.")
             else:
                 _name_lkp = {}
