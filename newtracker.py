@@ -152,7 +152,6 @@ def get_header_html(title_text, motto=""):
     </div>
     """
 
-# Show active Cloudflare link inside the web UI
 if os.path.exists(TUNNEL_CACHE_FILE):
     try:
         with open(TUNNEL_CACHE_FILE, "r") as f:
@@ -165,7 +164,7 @@ st.markdown(get_header_html("Attendance Analytics", motto="Automated Latecomer T
 st.markdown("""<div class="custom-alert">Upload access logs alongside the <strong>Staff Master List</strong> and <strong>SOC Schedule</strong> to generate reports. The system evaluates <strong>Main entrance Upfloor</strong> and <strong>Main entrance Ground Flr</strong> only. A person is marked Early if their absolute single first scan of the day at these doors is strictly <strong>&le; 08:31:00 AM</strong>.</div>""", unsafe_allow_html=True)
 
 # ==========================================
-# 3. UPLOADS & EXPORT HELPERS (FPDF 1.x Compatible)
+# 3. UPLOADS & EXPORT HELPERS
 # ==========================================
 up_col1, up_col2, up_col3 = st.columns(3)
 with up_col1:
@@ -200,25 +199,29 @@ def render_export_dropdown(dataframe, period_label, report_title, report_subtitl
         doc.save(buf_docx)
         st.download_button("Download as Word (.docx)", data=buf_docx.getvalue(), file_name=f"{key_prefix}_{period_label.replace(' ', '_')}.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", key=f"docx_{key_prefix}_{period_label}")
         
-        # PDF (Backwards Compatible with FPDF 1.7.2 and FPDF2)
+        # PDF (Fixed Unicode Emoji Crash)
+        def clean_pdf_text(txt):
+            # Strip emojis so FPDF doesn't crash on latin-1 encoding
+            return str(txt).replace('✅', '').replace('⚠️', '').replace('🚫', '').strip().encode('latin-1', 'ignore').decode('latin-1')
+
         pdf = FPDF(orientation='L')
         pdf.add_page()
         pdf.set_font('Helvetica', 'B', 14)
-        pdf.cell(w=0, h=10, txt=f'{report_title} - {period_label}', border=0, ln=1, align='C')
+        pdf.cell(w=0, h=10, txt=clean_pdf_text(f'{report_title} - {period_label}'), border=0, ln=1, align='C')
         pdf.set_font('Helvetica', '', 9)
-        pdf.cell(w=0, h=8, txt=report_subtitle, border=0, ln=1, align='C')
+        pdf.cell(w=0, h=8, txt=clean_pdf_text(report_subtitle), border=0, ln=1, align='C')
         pdf.ln(5)
         pdf.set_font('Helvetica', 'B', 8)
         for i, h in enumerate(dataframe.columns):
             w = col_widths_pdf[i] if i < len(col_widths_pdf) else 40
-            pdf.cell(w=w, h=8, txt=str(h), border=1, ln=0, align='C')
+            pdf.cell(w=w, h=8, txt=clean_pdf_text(h), border=1, ln=0, align='C')
         pdf.ln()
         pdf.set_font('Helvetica', '', 7)
         for _, row in dataframe.iterrows():
             for i, cn in enumerate(dataframe.columns):
                 w = col_widths_pdf[i] if i < len(col_widths_pdf) else 40
                 align = 'C' if i in [0, 2] else 'L'
-                pdf.cell(w=w, h=7, txt=str(row[cn]), border=1, ln=0, align=align)
+                pdf.cell(w=w, h=7, txt=clean_pdf_text(row[cn]), border=1, ln=0, align=align)
             pdf.ln()
 
         try:
@@ -270,7 +273,7 @@ if uploaded_files:
             lc = [str(c).strip().lower() for c in cols]
             return 'time' in lc and 'door name' in lc
 
-        # -- Load massive amounts of access sheets with Header-Hunting
+        # -- Load access sheets (handles CSV, multi-sheet XLSX seamlessly)
         all_dfs = []
         for uf in uploaded_files:
             if uf.name.endswith('.csv'):
@@ -309,27 +312,30 @@ if uploaded_files:
             df['Personnel ID'] = df['Personnel ID'].apply(clean_id)
             df = df[df['Personnel ID'] != '0']
 
-        # -- RULE 1: Filter explicitly to TARGET DOORS ONLY, completely ignoring all other doors --
-        # BROADENED REGEX: Safely catches "Main entrance Ground Flr", "Main Entrance Up floor", etc., guarding against typos.
+        # -- RULE 1: EXCLUDE EXITS (Prevent tailgaters' exit times from becoming their arrival time)
+        if 'Event Description' in df.columns:
+            evt_lower = df['Event Description'].astype(str).str.lower()
+            df = df[~evt_lower.str.contains('exit', na=False)].copy()
+
+        # -- RULE 2: Filter explicitly to TARGET DOORS ONLY
         door_cleaned = df['Door Name'].astype(str).str.lower().str.replace(r'[^a-z]', '', regex=True)
         door_mask = door_cleaned.str.contains('mainentrance', na=False) & door_cleaned.str.contains('up|ground|gnd', na=False)
         df = df[door_mask].copy()
 
-        # -- RULE 2: Robust Date Parsing & Fallbacks --
+        # -- RULE 3: Robust Date Parsing
         def safe_parse_date_series(col):
             if pd.api.types.is_datetime64_any_dtype(col):
                 if hasattr(col.dt, 'tz') and col.dt.tz is not None:
                     return col.dt.tz_localize(None)
                 return col
-            parsed = pd.to_datetime(col, errors='coerce', dayfirst=True)
-            na_mask = parsed.isna()
-            if na_mask.any():
-                parsed.loc[na_mask] = pd.to_datetime(col.loc[na_mask], errors='coerce', dayfirst=False)
+            parsed = pd.to_datetime(col, errors='coerce')
             if hasattr(parsed.dt, 'tz') and parsed.dt.tz is not None:
                 parsed = parsed.dt.tz_localize(None)
             return parsed
 
         df['Parsed_Time'] = safe_parse_date_series(df['Time'])
+        
+        # If separated Date and Time columns exist, merge them appropriately
         if 'Date' in df.columns:
             parsed_date_col = safe_parse_date_series(df['Date'])
             valid = parsed_date_col.notna() & df['Parsed_Time'].notna()
@@ -342,10 +348,9 @@ if uploaded_files:
         df['Time_Only'] = df['Parsed_Time'].dt.time
         df['Date_dt'] = pd.to_datetime(df['Date'])
 
-        # -- RULE 3: STRICT SINGLE EARLIEST ENTRY LOGIC --
+        # -- RULE 4: STRICT SINGLE EARLIEST ENTRY LOGIC --
         df_first = df.sort_values('Parsed_Time').drop_duplicates(subset=['Date', 'Personnel ID'], keep='first').copy()
         
-        # Evaluate Early/Late based purely on that single entry (08:31:00 is Early, 08:31:01+ is Late)
         CUTOFF_TIME = datetime.time(8, 31, 0)
         df_first['Is_Early'] = df_first['Time_Only'] <= CUTOFF_TIME
 
@@ -390,10 +395,8 @@ if uploaded_files:
             soc_ids = soc_ids_from_roster.copy()
             if df_soc is not None: soc_ids.update(df_soc['Personnel ID'].unique())
             
-            # Filter standard staff from the single-entry list
             df_std_first = df_first[~df_first['Personnel ID'].astype(str).str.strip().isin(soc_ids)].copy()
             
-            # Map Names early so they are available for all outputs
             name_cols = [c for c in ['First Name', 'Last Name'] if c in df_std_first.columns]
             df_std_first['Full Name'] = df_std_first[name_cols].fillna('').astype(str).apply(lambda r: ' '.join(r).strip(), axis=1) if name_cols else ''
             
@@ -406,7 +409,7 @@ if uploaded_files:
             st.markdown("### 📋 Daily Check-in Log (Earliest Scans)")
             st.markdown("Shows the absolute earliest scan per person on the target doors, and whether they were **On Time** (≤ 08:31:00) or **Late**.")
             
-            df_std_workday['Status'] = df_std_workday['Is_Early'].apply(lambda x: '✅ On Time' if x else '⚠️ Late')
+            df_std_workday['Status'] = df_std_workday['Is_Early'].apply(lambda x: '✅ On Time ' if x else '⚠️ Late ')
             
             log_pf_col, log_ex_col = st.columns([4, 1])
             with log_pf_col:
@@ -416,7 +419,7 @@ if uploaded_files:
                 daily_log_disp = daily_log_f[['Personnel ID', 'Full Name', 'Date_Str', 'Time_Str', 'Door Name', 'Status']].sort_values(['Date_Str', 'Time_Str']).rename(columns={'Date_Str': 'Date', 'Time_Str': 'Earliest Time', 'Door Name': 'Logged Door'})
                 st.dataframe(daily_log_disp, hide_index=True, use_container_width=True)
                 with log_ex_col:
-                    render_export_dropdown(daily_log_disp, daily_log_period, "Standard Staff Daily Log", "Earliest scans at target doors.", [20, 40, 20, 20, 40, 20], "std_daily_log")
+                    render_export_dropdown(daily_log_disp, daily_log_period, "Standard Staff Daily Log", "Earliest scans at target doors.", [15, 35, 15, 15, 45, 15], "std_daily_log")
             else:
                 st.info("No logs found for the selected period.")
 
@@ -424,7 +427,6 @@ if uploaded_files:
             st.divider()
             st.markdown("### ⚠️ Late Arrivals Summary")
 
-            # The exact late people are simply those whose ONLY earliest scan was not early.
             df_late = df_std_workday[~df_std_workday['Is_Early']].copy()
 
             if df_late.empty:
@@ -538,9 +540,9 @@ if uploaded_files:
                 _sc['Date_dt_col'] = pd.to_datetime(_sc['Date_Str'])
 
                 def _soc_status(row):
-                    if pd.isna(row['Time_Only']): return '🚫 Absent'
-                    if pd.notna(row['Shift_Start']) and row['Time_Only'] > row['Shift_Start']: return '⚠️ Late'
-                    return '✅ On Time'
+                    if pd.isna(row['Time_Only']): return '🚫 Absent '
+                    if pd.notna(row['Shift_Start']) and row['Time_Only'] > row['Shift_Start']: return '⚠️ Late '
+                    return '✅ On Time '
 
                 def _soc_mins(row):
                     if pd.isna(row['Time_Only']) or pd.isna(row['Shift_Start']): return 0
@@ -553,7 +555,7 @@ if uploaded_files:
 
                 _soc_comp_all = _sc[['Personnel ID', 'Full Name', 'Date_Str', 'Shift_Title', 'Sched_Start_Str', 'Actual_In_Str', 'Status', 'Mins Late']].rename(columns={'Date_Str': 'Shift Date', 'Shift_Title': 'Shift', 'Sched_Start_Str': 'Scheduled Start', 'Actual_In_Str': 'Actual Check-in'}).sort_values(['Personnel ID', 'Shift Date'])
 
-                _late_pids, _abs_pids = _sc[_sc['Status'] == '⚠️ Late']['Personnel ID'].nunique(), _sc[_sc['Status'] == '🚫 Absent']['Personnel ID'].nunique()
+                _late_pids, _abs_pids = _sc[_sc['Status'] == '⚠️ Late ']['Personnel ID'].nunique(), _sc[_sc['Status'] == '🚫 Absent ']['Personnel ID'].nunique()
                 _banner = []
                 if _late_pids: _banner.append(f"<strong style='color:#CAEEC8;'>{_late_pids}</strong> member(s) arrived late")
                 if _abs_pids: _banner.append(f"<strong style='color:#CAEEC8;'>{_abs_pids}</strong> member(s) had absences")
@@ -572,7 +574,7 @@ if uploaded_files:
 
                 st.divider()
                 st.markdown("### Compliance Summary — SOC Team")
-                _soc_summary = _soc_comp_all.groupby(['Personnel ID', 'Full Name']).agg(Scheduled_Shifts=('Shift Date', 'count'), On_Time=('Status', lambda x: (x == '✅ On Time').sum()), Late=('Status', lambda x: x.str.startswith('⚠️').sum()), Absent=('Status', lambda x: (x == '🚫 Absent').sum()), Total_Mins_Late=('Mins Late', 'sum')).reset_index().sort_values(['Absent', 'Late'], ascending=False)
+                _soc_summary = _soc_comp_all.groupby(['Personnel ID', 'Full Name']).agg(Scheduled_Shifts=('Shift Date', 'count'), On_Time=('Status', lambda x: (x == '✅ On Time ').sum()), Late=('Status', lambda x: x.str.startswith('⚠️').sum()), Absent=('Status', lambda x: (x == '🚫 Absent ').sum()), Total_Mins_Late=('Mins Late', 'sum')).reset_index().sort_values(['Absent', 'Late'], ascending=False)
                 _soc_summary.columns = ['Personnel ID', 'Full Name', 'Scheduled Shifts', 'On Time', 'Late', 'Absent', 'Total Mins Late']
                 st.dataframe(_soc_summary, hide_index=True, use_container_width=True)
                 render_export_dropdown(_soc_summary, "All Time", "SOC Team Summary", "Per-person SOC overview.", [18, 40, 20, 14, 14, 14, 20], "soc_summary")
