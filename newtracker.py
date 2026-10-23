@@ -395,11 +395,15 @@ if uploaded_files:
         if 'Personnel ID' in df.columns:
             df['Personnel ID'] = df['Personnel ID'].apply(clean_id)
 
-        # Parse timestamps
-        df['Parsed_Time'] = pd.to_datetime(df['Time'], errors='coerce', dayfirst=True)
-        nat_mask = df['Parsed_Time'].isna()
-        if nat_mask.any():
-            df.loc[nat_mask, 'Parsed_Time'] = pd.to_datetime(df.loc[nat_mask, 'Time'], errors='coerce', dayfirst=False)
+        # Parse timestamps robustly (Fixes the September Day/Month ambiguity problem)
+        if pd.api.types.is_datetime64_any_dtype(df['Time']):
+            df['Parsed_Time'] = df['Time']
+        else:
+            try:
+                df['Parsed_Time'] = pd.to_datetime(df['Time'], format='mixed', errors='coerce')
+            except ValueError:
+                df['Parsed_Time'] = pd.to_datetime(df['Time'], infer_datetime_format=True, errors='coerce')
+                
         df = df.dropna(subset=['Parsed_Time']).copy()
 
         df['Event Description'] = df['Event Description'].astype(str).str.strip()
@@ -470,7 +474,15 @@ if uploaded_files:
                     df_soc = None
                     break
             if df_soc is not None:
-                df_soc['Date'] = pd.to_datetime(df_soc['Date'], errors='coerce', dayfirst=True).dt.date
+                # Parse SOC dates robustly (Fixes the Day/Month ambiguity problem)
+                if pd.api.types.is_datetime64_any_dtype(df_soc['Date']):
+                    df_soc['Date'] = df_soc['Date'].dt.date
+                else:
+                    try:
+                        df_soc['Date'] = pd.to_datetime(df_soc['Date'], format='mixed', errors='coerce').dt.date
+                    except ValueError:
+                        df_soc['Date'] = pd.to_datetime(df_soc['Date'], infer_datetime_format=True, errors='coerce').dt.date
+
                 df_soc = df_soc.dropna(subset=['Date']).copy()
                 df_soc['Shift_Lower'] = df_soc['Shift'].astype(str).str.strip().str.lower()
                 df_soc['Shift_Start'] = df_soc['Shift_Lower'].map(SOC_SHIFT_TIMES)
