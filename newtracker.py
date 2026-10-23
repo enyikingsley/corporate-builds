@@ -258,29 +258,41 @@ def render_export_dropdown(dataframe, period_label, report_title, report_subtitl
             key=f"docx_{key_prefix}_{period_label}"
         )
 
-        # PDF
+        # PDF - UPDATED: Made compatible with legacy FPDF & fpdf2
         pdf = FPDF()
         pdf.add_page(orientation='L')
         pdf.set_font('Helvetica', 'B', 14)
-        pdf.cell(0, 10, f'{report_title} - {period_label}', new_x="LMARGIN", new_y="NEXT", align='C')
+        
+        # Use ln=1 instead of new_x/new_y for legacy compatibility
+        pdf.cell(0, 10, f'{report_title} - {period_label}', ln=1, align='C')
+        
         pdf.set_font('Helvetica', '', 9)
-        pdf.cell(0, 8, report_subtitle, new_x="LMARGIN", new_y="NEXT", align='C')
+        pdf.cell(0, 8, report_subtitle, ln=1, align='C')
         pdf.ln(5)
         pdf.set_font('Helvetica', 'B', 8)
         for i, h in enumerate(dataframe.columns):
             pdf.cell(col_widths_pdf[i] if i < len(col_widths_pdf) else 40, 8, str(h), border=1, align='C')
         pdf.ln()
+        
         pdf.set_font('Helvetica', '', 7)
         for _, row in dataframe.iterrows():
             for i, cn in enumerate(dataframe.columns):
                 w = col_widths_pdf[i] if i < len(col_widths_pdf) else 40
-                pdf.cell(w, 7, str(row[cn]), border=1, align='C' if i in [0, 2] else 'L')
+                
+                # Replace special chars & emojis (⚠️, ✅, 🚫) to prevent PyFPDF from crashing
+                val = str(row[cn])
+                val = val.encode('latin-1', 'replace').decode('latin-1') 
+                
+                pdf.cell(w, 7, val, border=1, align='C' if i in [0, 2] else 'L')
             pdf.ln()
-        buf_pdf = io.BytesIO()
-        pdf.output(buf_pdf)
+            
+        # Get PDF buffer based on standard FPDF/FPDF2 output rules
+        pdf_out = pdf.output(dest='S')
+        pdf_bytes = pdf_out.encode('latin-1', errors='ignore') if isinstance(pdf_out, str) else bytes(pdf_out)
+        
         st.download_button(
             label="Download as PDF (.pdf)",
-            data=buf_pdf.getvalue(),
+            data=pdf_bytes,
             file_name=f"{key_prefix}_{period_label.replace(' ', '_')}.pdf",
             mime="application/pdf",
             key=f"pdf_{key_prefix}_{period_label}"
