@@ -5,13 +5,14 @@ import io
 import json
 import os
 import base64
+import re
+import warnings
 from fpdf import FPDF
 from docx import Document
 from docx.shared import Inches, Pt
 from docx.enum.table import WD_TABLE_ALIGNMENT
 import pyotp
 import qrcode
-
 import time
 
 st.set_page_config(page_title="Attendance Checker", page_icon="🕒", layout="wide")
@@ -175,6 +176,42 @@ if not st.session_state.get('authenticated', False):
 
     st.stop()
 
+
+# ── Intelligent Date Parser Engine ─────────────────────────────────────────
+def robust_parse_date(series, default_dayfirst=False):
+    """
+    Intelligently determines whether a file uses DD/MM or MM/DD by sniffing 
+    for unambiguous dates (days > 12). Falls back to the default format if entirely ambiguous.
+    """
+    if pd.api.types.is_datetime64_any_dtype(series):
+        return series
+    
+    is_dayfirst = default_dayfirst
+    s_clean = series.dropna().astype(str).str.strip()
+    s_clean = s_clean[s_clean != '']
+    
+    # Sniff the format from the first 1000 rows
+    for val in s_clean.head(1000):
+        # Captures dates matching ##/##/#### or ##-##-####
+        m = re.search(r'^(\d{1,2})[/-](\d{1,2})[/-]\d{2,4}', val)
+        if m:
+            p1, p2 = int(m.group(1)), int(m.group(2))
+            if p1 > 12 and p2 <= 12:
+                is_dayfirst = True      # E.g. 28/08/2026 -> UK/NG format 
+                break
+            elif p1 <= 12 and p2 > 12:
+                is_dayfirst = False     # E.g. 08/28/2026 -> US format 
+                break
+
+    # Parse utilizing the detected truth regarding the format of the spreadsheet
+    try:
+        return pd.to_datetime(series, format='mixed', dayfirst=is_dayfirst, errors='coerce')
+    except ValueError:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            return pd.to_datetime(series, infer_datetime_format=True, dayfirst=is_dayfirst, errors='coerce')
+
+
 st.markdown(get_header_html("sentrium_logo.jpg", "Sentrium Attendance Tracker", "🕒", width=60), unsafe_allow_html=True)
 
 st.markdown(
@@ -258,12 +295,11 @@ def render_export_dropdown(dataframe, period_label, report_title, report_subtitl
             key=f"docx_{key_prefix}_{period_label}"
         )
 
-        # PDF - UPDATED: Made compatible with legacy FPDF & fpdf2
+        # PDF - Legacy FPDF & fpdf2
         pdf = FPDF()
         pdf.add_page(orientation='L')
         pdf.set_font('Helvetica', 'B', 14)
         
-        # Use ln=1 instead of new_x/new_y for legacy compatibility
         pdf.cell(0, 10, f'{report_title} - {period_label}', ln=1, align='C')
         
         pdf.set_font('Helvetica', '', 9)
@@ -279,14 +315,12 @@ def render_export_dropdown(dataframe, period_label, report_title, report_subtitl
             for i, cn in enumerate(dataframe.columns):
                 w = col_widths_pdf[i] if i < len(col_widths_pdf) else 40
                 
-                # Replace special chars & emojis (⚠️, ✅, 🚫) to prevent PyFPDF from crashing
                 val = str(row[cn])
                 val = val.encode('latin-1', 'replace').decode('latin-1') 
                 
                 pdf.cell(w, 7, val, border=1, align='C' if i in [0, 2] else 'L')
             pdf.ln()
             
-        # Get PDF buffer based on standard FPDF/FPDF2 output rules
         pdf_out = pdf.output(dest='S')
         pdf_bytes = pdf_out.encode('latin-1', errors='ignore') if isinstance(pdf_out, str) else bytes(pdf_out)
         
@@ -297,7 +331,6 @@ def render_export_dropdown(dataframe, period_label, report_title, report_subtitl
             mime="application/pdf",
             key=f"pdf_{key_prefix}_{period_label}"
         )
-
 
 # ── Helper: period filter (All / Daily / Weekly / Monthly) ──────────────────
 def period_filter(df, date_col, parsed_time_col, radio_key):
@@ -377,7 +410,6 @@ if uploaded_files:
 
         df = pd.concat(all_dfs, ignore_index=True)
 
-        # Define helper to clean Personnel ID and prevent merge float/str errors
         def clean_id(val):
             if pd.isna(val):
                 return ""
@@ -386,7 +418,6 @@ if uploaded_files:
                 val_str = val_str[:-2]
             return val_str
 
-        # Validate
         for col in ['Event Description', 'Time', 'Door Name']:
             if col not in df.columns:
                 st.error(f"Missing required column: **{col}**")
@@ -395,21 +426,15 @@ if uploaded_files:
         if 'Personnel ID' in df.columns:
             df['Personnel ID'] = df['Personnel ID'].apply(clean_id)
 
-        # Parse timestamps robustly (Fixes the September Day/Month ambiguity problem)
-        if pd.api.types.is_datetime64_any_dtype(df['Time']):
-            df['Parsed_Time'] = df['Time']
-        else:
-            try:
-                df['Parsed_Time'] = pd.to_datetime(df['Time'], format='mixed', errors='coerce')
-            except ValueError:
-                df['Parsed_Time'] = pd.to_datetime(df['Time'], infer_datetime_format=True, errors='coerce')
-                
+        # ── Intelligently Parse Access Log Dates ──
+        # Defaults to MM/DD (US layout) which is standard for machine-exported spreadsheets.
+        df['Parsed_Time'] = robust_parse_date(df['Time'], default_dayfirst=False)
         df = df.dropna(subset=['Parsed_Time']).copy()
 
         df['Event Description'] = df['Event Description'].astype(str).str.strip()
         df['Door Name'] = df['Door Name'].astype(str).str.strip()
 
-        # Fixed filters: Strictly main entrances only, as requested.
+        # Fixed filters: Strictly main entrances only.
         TARGET_DOORS  = ['Main entrance Ground Flr', 'Main entrance Upfloor']
         TARGET_EVENTS = ['Password', 'Normal Open']
         
@@ -434,11 +459,11 @@ if uploaded_files:
 
         df_roster = None
         soc_ids_from_roster = set()
+        
         if roster_file:
             df_roster = load_simple_excel(roster_file)
             df_roster.columns = df_roster.columns.astype(str).str.strip()
-            # Expect exactly: Personnel ID, Expected Days
-            # Normalize known column names
+            
             col_map = {}
             for c in df_roster.columns:
                 cl = c.lower()
@@ -454,10 +479,9 @@ if uploaded_files:
             else:
                 df_roster['Personnel ID'] = df_roster['Personnel ID'].apply(clean_id)
                 df_roster['Expected Days'] = df_roster['Expected Days'].astype(str).str.strip()
-                # Identify SOC staff (Expected Days = "SOC")
                 soc_mask = df_roster['Expected Days'].str.upper() == 'SOC'
                 soc_ids_from_roster = set(df_roster.loc[soc_mask, 'Personnel ID'].unique())
-                # Keep only standard staff for absentee logic
+                
                 df_std_roster = df_roster[~soc_mask].copy()
                 df_std_roster['Days_Per_Week'] = pd.to_numeric(df_std_roster['Expected Days'], errors='coerce')
                 df_std_roster = df_std_roster.dropna(subset=['Days_Per_Week']).copy()
@@ -468,26 +492,24 @@ if uploaded_files:
             df_soc = load_simple_excel(soc_file)
             df_soc.columns = df_soc.columns.astype(str).str.strip()
             df_soc = normalize_columns(df_soc)
-            # Expect: Personnel ID, Date, Shift (+ optional First Name, Last Name)
+            
             for needed in ['Personnel ID', 'Date', 'Shift']:
                 if needed not in df_soc.columns:
                     st.warning(f"SOC Schedule must contain a '{needed}' column. SOC tab disabled.")
                     df_soc = None
                     break
+                    
             if df_soc is not None:
-                # Parse SOC dates robustly (Fixes the Day/Month ambiguity problem)
-                if pd.api.types.is_datetime64_any_dtype(df_soc['Date']):
-                    df_soc['Date'] = df_soc['Date'].dt.date
-                else:
-                    try:
-                        df_soc['Date'] = pd.to_datetime(df_soc['Date'], format='mixed', errors='coerce').dt.date
-                    except ValueError:
-                        df_soc['Date'] = pd.to_datetime(df_soc['Date'], infer_datetime_format=True, errors='coerce').dt.date
-
+                # ── Intelligently Parse SOC Human Input Dates ──
+                # Defaults to DD/MM (UK/Intl layout) which is the organizational standard for human entry
+                df_soc['Date_parsed'] = robust_parse_date(df_soc['Date'], default_dayfirst=True)
+                df_soc['Date'] = df_soc['Date_parsed'].dt.date
                 df_soc = df_soc.dropna(subset=['Date']).copy()
+
                 df_soc['Shift_Lower'] = df_soc['Shift'].astype(str).str.strip().str.lower()
                 df_soc['Shift_Start'] = df_soc['Shift_Lower'].map(SOC_SHIFT_TIMES)
                 df_soc['Personnel ID'] = df_soc['Personnel ID'].apply(clean_id)
+                
                 fn_cols = [c for c in ['First Name', 'Last Name'] if c in df_soc.columns]
                 df_soc['Full Name'] = df_soc[fn_cols].fillna('').astype(str).apply(
                     lambda r: ' '.join(r).strip(), axis=1) if fn_cols else ''
@@ -495,7 +517,6 @@ if uploaded_files:
         # ── STEP 3: Tabs ────────────────────────────────────────────────────
         st.divider()
         tab_std, tab_soc = st.tabs(["Standard Staff", "SOC Team"])
-
 
         # ════════════════════════════════════════════════════════════════════
         # TAB 1 — STANDARD STAFF
@@ -505,7 +526,6 @@ if uploaded_files:
             CUTOFF = datetime.time(8, 30, 0)
             WORKDAYS = {0, 1, 2, 3, 4}  # Mon–Fri
 
-            # Combine SOC IDs from master list + SOC schedule
             soc_ids = soc_ids_from_roster.copy()
             if df_soc is not None:
                 soc_ids.update(df_soc['Personnel ID'].astype(str).str.strip().unique())
@@ -515,11 +535,9 @@ if uploaded_files:
             # ── Late Arrivals ────────────────────────────────────────────────
             st.subheader("Late Arrivals — Standard Staff")
 
-            # Filter Mon-Fri only
             df_std_workday = df_std_first[df_std_first['Date_dt'].dt.dayofweek.isin(WORKDAYS)].copy()
             df_late = df_std_workday[df_std_workday['Time_Only'] >= CUTOFF].copy()
 
-            # Build name columns
             name_cols = [c for c in ['First Name', 'Last Name'] if c in df_late.columns]
             df_late['Full Name'] = df_late[name_cols].fillna('').astype(str).apply(
                 lambda r: ' '.join(r).strip(), axis=1) if name_cols else ''
@@ -541,7 +559,6 @@ if uploaded_files:
                     unsafe_allow_html=True
                 )
 
-                # Period filter row + export dropdown on the right
                 pf_col, ex_col = st.columns([4, 1])
                 with pf_col:
                     df_late_f, period_label_late = period_filter(df_late.copy(), 'Date', 'Parsed_Time', 'std_late_period')
@@ -549,7 +566,6 @@ if uploaded_files:
                 if df_late_f.empty:
                     st.info("No late arrivals for the selected period.")
                 else:
-                    # Aggregate: who was late, on which dates, at what times
                     late_agg = (
                         df_late_f.sort_values(['Date', 'Time_Only'])
                         .groupby(['Personnel ID', 'Full Name'])
@@ -562,7 +578,6 @@ if uploaded_files:
                         .sort_values('Times_Late', ascending=False)
                     )
 
-                    # Attach Expected Days/Week from roster if available
                     if df_roster is not None:
                         late_agg = late_agg.merge(
                             df_std_roster[['Personnel ID', 'Days_Per_Week']],
@@ -594,7 +609,6 @@ if uploaded_files:
             if df_roster is None:
                 st.info("Upload the Standard Staff Master List to enable weekly compliance tracking.")
             else:
-                # Build name lookup {Personnel ID -> Full Name}
                 _name_lkp = {}
                 if 'First Name' in df_first.columns:
                     _nl = df_first[['Personnel ID', 'First Name', 'Last Name']].copy()
@@ -605,7 +619,6 @@ if uploaded_files:
                     _nl = _nl.drop_duplicates(subset='Personnel ID')
                     _name_lkp = dict(zip(_nl['Personnel ID'], _nl['Full Name']))
 
-                # Workday-only (Mon–Fri) badge-ins for standard staff
                 _df_att = df_std_first[df_std_first['Date_dt'].dt.dayofweek.isin(WORKDAYS)].copy()
                 _df_att['Personnel ID'] = _df_att['Personnel ID'].astype(str).str.strip()
                 _df_att['ISO_Year_n'] = _df_att['Parsed_Time'].dt.isocalendar().year.astype(int)
@@ -621,7 +634,6 @@ if uploaded_files:
                     _min_dt = _df_att['Parsed_Time'].min()
                     _max_dt = _df_att['Parsed_Time'].max()
 
-                    # All ISO week Mondays in the log date range
                     _wk_starts = pd.date_range(
                         _min_dt.to_period('W').to_timestamp(),
                         _max_dt.to_period('W').to_timestamp(),
@@ -639,7 +651,6 @@ if uploaded_files:
                         _iso_weeks = [{'year': int(_ic[0]), 'week': int(_ic[1]),
                                        'label': f"{int(_ic[0])}-W{str(int(_ic[1])).zfill(2)}"}]
 
-                    # Build per-person per-week compliance rows
                     _comp_rows = []
                     for _, _pr in df_std_roster.iterrows():
                         _pid  = str(_pr['Personnel ID'])
@@ -652,19 +663,18 @@ if uploaded_files:
                                 _mon = datetime.date.fromisocalendar(_wk['year'], _wk['week'], 1)
                             except Exception:
                                 continue
-                            # All 5 Mon–Fri calendar dates in this ISO week
+                            
                             _wd_strs = [
                                 (_mon + datetime.timedelta(days=_d)).strftime('%Y-%m-%d')
                                 for _d in range(5)
                             ]
                             _wk_att = _p_att[_p_att['Week_Label'] == _wk['label']].sort_values('Date')
                             _att_strs = set(_wk_att['Date_Str'].tolist())
-                            # "YYYY-MM-DD (HH:MM)" for each day attended
+                            
                             _att_entries = [
                                 f"{_r['Date_Str']} ({_r['Time_Str']})"
                                 for _, _r in _wk_att.iterrows()
                             ]
-                            # Workdays with NO badge-in recorded
                             _absent = [_d for _d in _wd_strs if _d not in _att_strs]
                             _actual  = len(_att_strs)
                             _deficit = max(0, _exp - _actual)
@@ -682,7 +692,6 @@ if uploaded_files:
 
                     _df_comp = pd.DataFrame(_comp_rows)
 
-                    # Summary banner
                     _nc_count = _df_comp[_df_comp['Deficit'] > 0]['Personnel ID'].nunique()
                     if _nc_count == 0:
                         st.markdown(
@@ -704,7 +713,6 @@ if uploaded_files:
                             unsafe_allow_html=True
                         )
 
-                    # Period selector + export
                     _pf2_col, _ex2_col = st.columns([4, 1])
                     _all_wk_opts = sorted(_df_comp['Week'].unique(), reverse=True)
                     with _pf2_col:
@@ -724,7 +732,6 @@ if uploaded_files:
                     )
                     st.dataframe(_detail_view, hide_index=True, use_container_width=True)
 
-                    # Per-person summary
                     st.markdown("**Summary** — aggregate compliance per employee.")
                     _nc_wk_list = (
                         _df_comp[_df_comp['Deficit'] > 0]
@@ -759,7 +766,6 @@ if uploaded_files:
                             [15, 35, 12, 12, 12, 8, 15, 60, 60], "std_compliance"
                         )
 
-
         # ════════════════════════════════════════════════════════════════════
         # TAB 2 — SOC TEAM
         # ════════════════════════════════════════════════════════════════════
@@ -779,19 +785,16 @@ if uploaded_files:
                 > Days off should simply be omitted — do not add a row for days off.
                 """)
             else:
-                # Cross-reference SOC schedule with access logs
                 _soc_pids = df_soc['Personnel ID'].unique()
                 _soc_logs = df_first[df_first['Personnel ID'].astype(str).str.strip().isin(_soc_pids)].copy()
                 _soc_logs['Personnel ID'] = _soc_logs['Personnel ID'].astype(str).str.strip()
 
-                # Merge schedule → actual logs (left join keeps every scheduled shift)
                 _merged = df_soc.merge(
                     _soc_logs[['Personnel ID', 'Date', 'Time_Only', 'Parsed_Time']],
                     on=['Personnel ID', 'Date'],
                     how='left'
                 )
 
-                # ── Build unified shift compliance table ────────────────────────
                 _sc = _merged.copy()
                 _sc['Date_Str']        = _sc['Date'].apply(
                     lambda d: d.strftime('%Y-%m-%d') if hasattr(d, 'strftime') else str(d))
@@ -823,7 +826,6 @@ if uploaded_files:
                 _sc['Status']    = _sc.apply(_soc_status, axis=1)
                 _sc['Mins Late'] = _sc.apply(_soc_mins, axis=1)
 
-                # Full compliance table (one row per scheduled shift per person)
                 _soc_comp_all = (
                     _sc[['Personnel ID', 'Full Name', 'Date_Str', 'Shift_Title',
                           'Sched_Start_Str', 'Actual_In_Str', 'Status', 'Mins Late']]
@@ -835,7 +837,6 @@ if uploaded_files:
                     .sort_values(['Personnel ID', 'Shift Date'])
                 )
 
-                # ── Summary banner ──────────────────────────────────────────────
                 _late_pids = _sc[_sc['Status'] == '⚠️ Late']['Personnel ID'].nunique()
                 _abs_pids  = _sc[_sc['Status'] == '🚫 Absent']['Personnel ID'].nunique()
                 _banner    = []
@@ -864,7 +865,6 @@ if uploaded_files:
                         unsafe_allow_html=True
                     )
 
-                # ── Shift Compliance Detail ─────────────────────────────────────
                 st.subheader("Shift Compliance — SOC Team")
                 st.markdown(
                     "Every row is one **scheduled shift**. &nbsp;"
@@ -901,7 +901,6 @@ if uploaded_files:
                             [18, 40, 14, 14, 16, 16, 14, 12], "soc_compliance"
                         )
 
-                # ── Per-Person Summary ──────────────────────────────────────────
                 st.divider()
                 st.subheader("Compliance Summary — SOC Team")
                 st.markdown(
