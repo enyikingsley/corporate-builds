@@ -355,42 +355,66 @@ def period_filter(df, date_col, parsed_time_col, radio_key):
 
 
 if uploaded_files:
-    with st.spinner("Decrypting Access Logs & Compiling Report..."):
-        time.sleep(1.2)
+    # Adding a progress UI for better feedback during massive uploads
+    progress_bar = st.progress(0)
+    status_text = st.empty()
 
     try:
         # ── STEP 1: Load & normalise access logs ────────────────────────────
-        STANDARD_COLS = {
-            'time': 'Time', 'door name': 'Door Name',
-            'event description': 'Event Description', 'personnel id': 'Personnel ID',
-            'first name': 'First Name', 'last name': 'Last Name', 'door number': 'Door Number',
-        }
+        
+        def get_norm_col(c):
+            """Robust matcher catching common column name variations across multiple log files."""
+            cl = str(c).strip().lower()
+            if cl in ['time', 'date/time', 'datetime', 'date time', 'event time']: return 'Time'
+            if cl in ['date']: return 'Date'
+            # Do NOT match 'device name' here so it doesn't accidentally overwrite the true 'Door Name' column
+            if cl in ['door name', 'location', 'door', 'point', 'reader name']: return 'Door Name'
+            if cl in ['event description', 'event', 'state', 'status', 'event type', 'description']: return 'Event Description'
+            if cl in ['personnel id', 'id', 'emp no', 'employee no', 'staff id', 'card no', 'pin', 'emp pin', 'ac no.']: return 'Personnel ID'
+            if cl in ['first name', 'name', 'employee name', 'staff name']: return 'First Name'
+            if cl in ['last name', 'surname']: return 'Last Name'
+            if cl in ['door number']: return 'Door Number'
+            return str(c).strip()
 
         def normalize_columns(df_in):
             return df_in.rename(columns={
-                c: STANDARD_COLS.get(str(c).strip().lower(), str(c).strip())
+                c: get_norm_col(c)
                 for c in df_in.columns
             })
 
         def has_required_cols(cols):
-            lc = [str(c).strip().lower() for c in cols]
-            return all(t in lc for t in ['time', 'door name', 'event description'])
+            lc = [get_norm_col(c).lower() for c in cols]
+            # Ensure at least Time and Door Name are present to proceed
+            return 'time' in lc and 'door name' in lc
 
         all_dfs = []
-        for uf in uploaded_files:
+        total_files = len(uploaded_files)
+
+        for idx, uf in enumerate(uploaded_files):
+            status_text.markdown(f"**Scanning File {idx + 1} of {total_files}:** `{uf.name}`...")
+            
             if uf.name.endswith('.csv'):
                 tmp = pd.read_csv(uf)
                 tmp.columns = tmp.columns.astype(str).str.strip()
-                all_dfs.append(normalize_columns(tmp))
+                tmp = normalize_columns(tmp)
+                
+                # Dynamic Stitching of Separated Date/Time Columns (fixes "all entries logged on current date" bug)
+                if 'Date' in tmp.columns and 'Time' in tmp.columns:
+                    mask = tmp['Date'].notna() & tmp['Time'].notna()
+                    tmp.loc[mask, 'Time'] = tmp.loc[mask, 'Date'].astype(str).str.split(' ').str[0] + ' ' + tmp.loc[mask, 'Time'].astype(str).str.split(' ').str[-1]
+                
+                all_dfs.append(tmp)
             else:
                 sheets = pd.read_excel(uf, sheet_name=None)
                 for sname, d in sheets.items():
                     if d.empty:
                         continue
                     d.columns = d.columns.astype(str).str.strip()
+                    
                     if not has_required_cols(d.columns):
                         found = False
-                        for i in range(min(20, len(d))):
+                        # Probe the first 30 rows in case the log sheet contains junk/report-headers before the actual columns
+                        for i in range(min(30, len(d))):
                             rv = [str(v).strip() for v in d.iloc[i].values]
                             if has_required_cols(rv):
                                 d.columns = rv
@@ -399,10 +423,24 @@ if uploaded_files:
                                 break
                         if not found:
                             continue
+                    
                     d = d.dropna(how='all').reset_index(drop=True)
                     d = normalize_columns(d)
+                    
+                    # Dynamic Stitching of Separated Date/Time Columns
+                    if 'Date' in d.columns and 'Time' in d.columns:
+                        mask = d['Date'].notna() & d['Time'].notna()
+                        d.loc[mask, 'Time'] = d.loc[mask, 'Date'].astype(str).str.split(' ').str[0] + ' ' + d.loc[mask, 'Time'].astype(str).str.split(' ').str[-1]
+
                     if 'Time' in d.columns and 'Door Name' in d.columns:
                         all_dfs.append(d)
+                        
+            progress_bar.progress((idx + 1) / total_files)
+
+        status_text.markdown("✨ **Files successfully parsed! Consolidating attendance logs...**")
+        time.sleep(0.5)
+        status_text.empty()
+        progress_bar.empty()
 
         if not all_dfs:
             st.error("No valid data found in the uploaded log files.")
@@ -411,20 +449,37 @@ if uploaded_files:
         df = pd.concat(all_dfs, ignore_index=True)
 
         def clean_id(val):
-            if pd.isna(val):
+            if pd.isna(val) or val == '':
                 return ""
+            try:
+                if isinstance(val, float) and val.is_integer():
+                    return str(int(val))
+            except:
+                pass
             val_str = str(val).strip()
-            if val_str.endswith('.0'):
+            # Clean floating extensions typically introduced by Excel
+            if val_str.endswith('.0') and val_str.replace('.', '').isdigit():
                 val_str = val_str[:-2]
+                
+            # Exit buttons / unregistered events often log as ID '0'. We must exclude them.
+            if val_str == '0':
+                return ""
             return val_str
 
-        for col in ['Event Description', 'Time', 'Door Name']:
+        for col in ['Time', 'Door Name']:
             if col not in df.columns:
                 st.error(f"Missing required column: **{col}**")
                 st.stop()
+                
+        # If system logs don't state Event Description, assume a successful punch 
+        if 'Event Description' not in df.columns:
+            df['Event Description'] = 'Normal Open'
 
-        if 'Personnel ID' in df.columns:
-            df['Personnel ID'] = df['Personnel ID'].apply(clean_id)
+        if 'Personnel ID' not in df.columns:
+            # Fallback to names if ID wasn't exported 
+            df['Personnel ID'] = df.get('First Name', df.get('Last Name', pd.Series([""] * len(df))))
+
+        df['Personnel ID'] = df['Personnel ID'].apply(clean_id)
 
         # ── Intelligently Parse Access Log Dates ──
         # Defaults to MM/DD (US layout) which is standard for machine-exported spreadsheets.
@@ -434,14 +489,25 @@ if uploaded_files:
         df['Event Description'] = df['Event Description'].astype(str).str.strip()
         df['Door Name'] = df['Door Name'].astype(str).str.strip()
 
-        # Fixed filters: Strictly main entrances only.
-        TARGET_DOORS  = ['Main entrance Ground Flr', 'Main entrance Upfloor']
-        TARGET_EVENTS = ['Password', 'Normal Open']
+        def is_target_door(door):
+            """Robustly isolates the two specific tracker doors to prevent false drops from trailing spaces/case errors."""
+            d = str(door).lower().strip()
+            # Forgiveness mapping for slight system naming changes
+            if 'main' in d and 'ground' in d: return True
+            if 'upstairs' in d: return True
+            if 'upfloor' in d: return True
+            return False
+
+        # Exclude known failed punch keywords while permitting ANY valid punch at the tracker doors
+        fail_keywords = 'denied|invalid|alarm|error|fail|reject|unregistered|not register'
         
         df_entry = df[
-            df['Event Description'].str.lower().isin([e.lower() for e in TARGET_EVENTS]) &
-            df['Door Name'].str.lower().isin([d.lower() for d in TARGET_DOORS])
+            df['Door Name'].apply(is_target_door) &
+            ~df['Event Description'].astype(str).str.lower().str.contains(fail_keywords, na=False)
         ].copy()
+
+        # Strip empty/invalid IDs from calculating duplicates 
+        df_entry = df_entry[df_entry['Personnel ID'] != ""]
 
         df_entry['Date']      = df_entry['Parsed_Time'].dt.date
         df_entry['Time_Only'] = df_entry['Parsed_Time'].dt.time
@@ -523,7 +589,7 @@ if uploaded_files:
         # ════════════════════════════════════════════════════════════════════
         with tab_std:
 
-            CUTOFF = datetime.time(8, 30, 0)
+            CUTOFF = datetime.time(8, 31, 0)
             WORKDAYS = {0, 1, 2, 3, 4}  # Mon–Fri
 
             soc_ids = soc_ids_from_roster.copy()
@@ -548,14 +614,14 @@ if uploaded_files:
                 st.markdown(
                     '<div class="output-alert-box" style="background:rgba(48,209,88,0.1);border-left:5px solid #30d158;padding:15px 20px;border-radius:6px;margin-bottom:1.5rem;">'
                     '<h3 style="margin:0;color:#30d158;">Perfect Attendance</h3>'
-                    '<p style="margin:5px 0 0;color:#e2e8f0;">No standard staff checked in after 8:30 AM.</p></div>',
+                    '<p style="margin:5px 0 0;color:#e2e8f0;">No standard staff checked in at or after 8:31 AM.</p></div>',
                     unsafe_allow_html=True
                 )
             else:
                 st.markdown(
                     f'<div class="output-alert-box" style="background:rgba(255,69,58,0.1);border-left:5px solid #ff453a;padding:15px 20px;border-radius:6px;margin-bottom:1.5rem;">'
                     f'<h3 style="margin:0;color:#ff6b6b;">{len(df_late)} Late Check-in Record(s)</h3>'
-                    f'<p style="margin:5px 0 0;color:#e2e8f0;">Standard staff who arrived at or after <strong>8:30 AM</strong> on a working day.</p></div>',
+                    f'<p style="margin:5px 0 0;color:#e2e8f0;">Standard staff who arrived at or after <strong>8:31 AM</strong> on a working day.</p></div>',
                     unsafe_allow_html=True
                 )
 
@@ -598,7 +664,7 @@ if uploaded_files:
                         render_export_dropdown(
                             late_agg, period_label_late,
                             "Standard Staff Late Arrivals",
-                            "Personnel who checked in at or after 08:30 AM on working days.",
+                            "Personnel who checked in at or after 08:31 AM on working days.",
                             [20, 40, 15, 15, 80, 80], "std_late"
                         )
 
@@ -808,18 +874,23 @@ if uploaded_files:
                 def _soc_status(row):
                     if pd.isna(row['Time_Only']):
                         return '🚫 Absent'
-                    if pd.notna(row['Shift_Start']) and row['Time_Only'] > row['Shift_Start']:
-                        return '⚠️ Late'
+                    if pd.notna(row['Shift_Start']):
+                        # Apply identical +1 minute grace interval to SOC
+                        shift_start_dt = datetime.datetime.combine(row['Date'], row['Shift_Start'])
+                        cutoff_time = (shift_start_dt + datetime.timedelta(minutes=1)).time()
+                        if row['Time_Only'] >= cutoff_time:
+                            return '⚠️ Late'
                     return '✅ On Time'
 
                 def _soc_mins(row):
                     if pd.isna(row['Time_Only']) or pd.isna(row['Shift_Start']):
                         return 0
-                    if row['Time_Only'] > row['Shift_Start']:
+                    shift_start_dt = datetime.datetime.combine(row['Date'], row['Shift_Start'])
+                    cutoff_time = (shift_start_dt + datetime.timedelta(minutes=1)).time()
+                    if row['Time_Only'] >= cutoff_time:
                         return int(
                             (datetime.datetime.combine(row['Date'], row['Time_Only']) -
-                             datetime.datetime.combine(row['Date'], row['Shift_Start'])
-                             ).total_seconds() / 60
+                             shift_start_dt).total_seconds() / 60
                         )
                     return 0
 
