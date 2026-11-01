@@ -141,14 +141,13 @@ def get_header_html(logo_path, title_text, emoji_fallback, width=40, motto=""):
     if os.path.exists(logo_path):
         with open(logo_path, "rb") as f:
             b64 = base64.b64encode(f.read()).decode()
-        # Flexbox layout with optional motto cleanly stacked under the title
         img_html = f'<img src="data:image/jpeg;base64,{b64}" width="{width}" style="margin-right: 18px; border-radius: 8px; box-shadow: 0 4px 15px rgba(0, 114, 255, 0.4); flex-shrink: 0; margin-top: 5px;">'
         return f'<div style="display: flex; align-items: flex-start; margin-bottom: 2.5rem;">{img_html}<div style="display: flex; flex-direction: column; justify-content: center;"><h1 style="margin: 0; padding: 0; {title_style}">{title_text}</h1>{motto_html}</div></div>'
     return f'<div style="margin-bottom: 2.5rem;"><h1 style="{title_style} margin: 0 0 10px 0;">{emoji_fallback} {title_text}</h1>{motto_html}</div>'
 
 # --- Security Gateway (Google Authenticator) ---
 if 'totp_secret' not in st.session_state:
-    st.session_state['totp_secret'] = 'JBSWY3DPEBLW64TN'  # Can be moved to st.secrets later
+    st.session_state['totp_secret'] = 'JBSWY3DPEBLW64TN'
 
 if not st.session_state.get('authenticated', False):
     st.markdown(get_header_html(
@@ -192,18 +191,16 @@ def robust_parse_date(series, default_dayfirst=False):
     
     # Sniff the format from the first 1000 rows
     for val in s_clean.head(1000):
-        # Captures dates matching ##/##/#### or ##-##-####
         m = re.search(r'^(\d{1,2})[/-](\d{1,2})[/-]\d{2,4}', val)
         if m:
             p1, p2 = int(m.group(1)), int(m.group(2))
             if p1 > 12 and p2 <= 12:
-                is_dayfirst = True      # E.g. 28/08/2026 -> UK/NG format 
+                is_dayfirst = True
                 break
             elif p1 <= 12 and p2 > 12:
-                is_dayfirst = False     # E.g. 08/28/2026 -> US format 
+                is_dayfirst = False
                 break
 
-    # Parse utilizing the detected truth regarding the format of the spreadsheet
     try:
         return pd.to_datetime(series, format='mixed', dayfirst=is_dayfirst, errors='coerce')
     except ValueError:
@@ -256,6 +253,12 @@ SOC_SHIFT_TIMES = {
     'night':     datetime.time(19, 0, 0),
 }
 
+# ── EXACT door names for entry tracking (only these two doors) ─────────────
+ENTRY_DOORS = {
+    'main entrance ground flr',
+    'main entrance upfloor'
+}
+
 # ── Helper: compact export dropdown ────────────────────────────────────────
 def render_export_dropdown(dataframe, period_label, report_title, report_subtitle, col_widths_pdf, key_prefix):
     """Renders a compact dropdown with Excel/Word/PDF export options."""
@@ -295,13 +298,11 @@ def render_export_dropdown(dataframe, period_label, report_title, report_subtitl
             key=f"docx_{key_prefix}_{period_label}"
         )
 
-        # PDF - Legacy FPDF & fpdf2
+        # PDF
         pdf = FPDF()
         pdf.add_page(orientation='L')
         pdf.set_font('Helvetica', 'B', 14)
-        
         pdf.cell(0, 10, f'{report_title} - {period_label}', ln=1, align='C')
-        
         pdf.set_font('Helvetica', '', 9)
         pdf.cell(0, 8, report_subtitle, ln=1, align='C')
         pdf.ln(5)
@@ -309,21 +310,16 @@ def render_export_dropdown(dataframe, period_label, report_title, report_subtitl
         for i, h in enumerate(dataframe.columns):
             pdf.cell(col_widths_pdf[i] if i < len(col_widths_pdf) else 40, 8, str(h), border=1, align='C')
         pdf.ln()
-        
         pdf.set_font('Helvetica', '', 7)
         for _, row in dataframe.iterrows():
             for i, cn in enumerate(dataframe.columns):
                 w = col_widths_pdf[i] if i < len(col_widths_pdf) else 40
-                
                 val = str(row[cn])
                 val = val.encode('latin-1', 'replace').decode('latin-1') 
-                
                 pdf.cell(w, 7, val, border=1, align='C' if i in [0, 2] else 'L')
             pdf.ln()
-            
         pdf_out = pdf.output(dest='S')
         pdf_bytes = pdf_out.encode('latin-1', errors='ignore') if isinstance(pdf_out, str) else bytes(pdf_out)
-        
         st.download_button(
             label="Download as PDF (.pdf)",
             data=pdf_bytes,
@@ -355,7 +351,6 @@ def period_filter(df, date_col, parsed_time_col, radio_key):
 
 
 if uploaded_files:
-    # Adding a progress UI for better feedback during massive uploads
     progress_bar = st.progress(0)
     status_text = st.empty()
 
@@ -367,7 +362,6 @@ if uploaded_files:
             cl = str(c).strip().lower()
             if cl in ['time', 'date/time', 'datetime', 'date time', 'event time']: return 'Time'
             if cl in ['date']: return 'Date'
-            # Do NOT match 'device name' here so it doesn't accidentally overwrite the true 'Door Name' column
             if cl in ['door name', 'location', 'door', 'point', 'reader name']: return 'Door Name'
             if cl in ['event description', 'event', 'state', 'status', 'event type', 'description']: return 'Event Description'
             if cl in ['personnel id', 'id', 'emp no', 'employee no', 'staff id', 'card no', 'pin', 'emp pin', 'ac no.']: return 'Personnel ID'
@@ -384,7 +378,6 @@ if uploaded_files:
 
         def has_required_cols(cols):
             lc = [get_norm_col(c).lower() for c in cols]
-            # Ensure at least Time and Door Name are present to proceed
             return 'time' in lc and 'door name' in lc
 
         all_dfs = []
@@ -398,14 +391,18 @@ if uploaded_files:
                 tmp.columns = tmp.columns.astype(str).str.strip()
                 tmp = normalize_columns(tmp)
                 
-                # Dynamic Stitching of Separated Date/Time Columns (fixes "all entries logged on current date" bug)
+                # Dynamic Stitching of Separated Date/Time Columns
                 if 'Date' in tmp.columns and 'Time' in tmp.columns:
                     mask = tmp['Date'].notna() & tmp['Time'].notna()
                     tmp.loc[mask, 'Time'] = tmp.loc[mask, 'Date'].astype(str).str.split(' ').str[0] + ' ' + tmp.loc[mask, 'Time'].astype(str).str.split(' ').str[-1]
                 
                 all_dfs.append(tmp)
             else:
-                sheets = pd.read_excel(uf, sheet_name=None)
+                if uf.name.endswith('.xls'):
+                    sheets = pd.read_excel(uf, sheet_name=None, engine='xlrd')
+                else:
+                    sheets = pd.read_excel(uf, sheet_name=None)
+                    
                 for sname, d in sheets.items():
                     if d.empty:
                         continue
@@ -413,7 +410,6 @@ if uploaded_files:
                     
                     if not has_required_cols(d.columns):
                         found = False
-                        # Probe the first 30 rows in case the log sheet contains junk/report-headers before the actual columns
                         for i in range(min(30, len(d))):
                             rv = [str(v).strip() for v in d.iloc[i].values]
                             if has_required_cols(rv):
@@ -427,7 +423,6 @@ if uploaded_files:
                     d = d.dropna(how='all').reset_index(drop=True)
                     d = normalize_columns(d)
                     
-                    # Dynamic Stitching of Separated Date/Time Columns
                     if 'Date' in d.columns and 'Time' in d.columns:
                         mask = d['Date'].notna() & d['Time'].notna()
                         d.loc[mask, 'Time'] = d.loc[mask, 'Date'].astype(str).str.split(' ').str[0] + ' ' + d.loc[mask, 'Time'].astype(str).str.split(' ').str[-1]
@@ -457,11 +452,8 @@ if uploaded_files:
             except:
                 pass
             val_str = str(val).strip()
-            # Clean floating extensions typically introduced by Excel
             if val_str.endswith('.0') and val_str.replace('.', '').isdigit():
                 val_str = val_str[:-2]
-                
-            # Exit buttons / unregistered events often log as ID '0'. We must exclude them.
             if val_str == '0':
                 return ""
             return val_str
@@ -471,49 +463,37 @@ if uploaded_files:
                 st.error(f"Missing required column: **{col}**")
                 st.stop()
                 
-        # If system logs don't state Event Description, assume a successful punch 
         if 'Event Description' not in df.columns:
             df['Event Description'] = 'Normal Open'
 
         if 'Personnel ID' not in df.columns:
-            # Fallback to names if ID wasn't exported 
             df['Personnel ID'] = df.get('First Name', df.get('Last Name', pd.Series([""] * len(df))))
 
         df['Personnel ID'] = df['Personnel ID'].apply(clean_id)
 
         # ── Intelligently Parse Access Log Dates ──
-        # Defaults to MM/DD (US layout) which is standard for machine-exported spreadsheets.
         df['Parsed_Time'] = robust_parse_date(df['Time'], default_dayfirst=False)
         df = df.dropna(subset=['Parsed_Time']).copy()
 
         df['Event Description'] = df['Event Description'].astype(str).str.strip()
         df['Door Name'] = df['Door Name'].astype(str).str.strip()
+        df['Door_Name_Norm'] = df['Door Name'].str.lower().str.strip()
 
-        def is_target_door(door):
-            """Robustly isolates the two specific tracker doors to prevent false drops from trailing spaces/case errors."""
-            d = str(door).lower().strip()
-            # Forgiveness mapping for slight system naming changes
-            if 'main' in d and 'ground' in d: return True
-            if 'upstairs' in d: return True
-            if 'upfloor' in d: return True
-            return False
-
-        # Exclude known failed punch keywords while permitting ANY valid punch at the tracker doors
-        fail_keywords = 'denied|invalid|alarm|error|fail|reject|unregistered|not register'
+        # EXACT door matching - only the two designated entry doors
+        fail_keywords = 'denied|invalid|alarm|error|fail|reject|unregistered|not register|unauthorized|access denied|validate interval'
         
         df_entry = df[
-            df['Door Name'].apply(is_target_door) &
+            df['Door_Name_Norm'].isin(ENTRY_DOORS) &
             ~df['Event Description'].astype(str).str.lower().str.contains(fail_keywords, na=False)
         ].copy()
 
-        # Strip empty/invalid IDs from calculating duplicates 
         df_entry = df_entry[df_entry['Personnel ID'] != ""]
 
         df_entry['Date']      = df_entry['Parsed_Time'].dt.date
         df_entry['Time_Only'] = df_entry['Parsed_Time'].dt.time
         df_entry['Date_dt']   = pd.to_datetime(df_entry['Date'])
 
-        # First badge-in per person per day
+        # First badge-in per person per day across BOTH entry doors (earliest timestamp wins)
         df_entry = df_entry.sort_values('Parsed_Time')
         df_first = df_entry.drop_duplicates(subset=['Date', 'Personnel ID'], keep='first').copy()
 
@@ -521,6 +501,8 @@ if uploaded_files:
         def load_simple_excel(file_obj):
             if file_obj.name.endswith('.csv'):
                 return pd.read_csv(file_obj)
+            if file_obj.name.endswith('.xls'):
+                return pd.read_excel(file_obj, engine='xlrd')
             return pd.read_excel(file_obj)
 
         df_roster = None
@@ -566,8 +548,6 @@ if uploaded_files:
                     break
                     
             if df_soc is not None:
-                # ── Intelligently Parse SOC Human Input Dates ──
-                # Defaults to DD/MM (UK/Intl layout) which is the organizational standard for human entry
                 df_soc['Date_parsed'] = robust_parse_date(df_soc['Date'], default_dayfirst=True)
                 df_soc['Date'] = df_soc['Date_parsed'].dt.date
                 df_soc = df_soc.dropna(subset=['Date']).copy()
@@ -589,7 +569,7 @@ if uploaded_files:
         # ════════════════════════════════════════════════════════════════════
         with tab_std:
 
-            CUTOFF = datetime.time(8, 31, 0)
+            CUTOFF = datetime.time(8, 31, 0)  # 08:31 = 08:30 start + 1 min grace
             WORKDAYS = {0, 1, 2, 3, 4}  # Mon–Fri
 
             soc_ids = soc_ids_from_roster.copy()
@@ -875,7 +855,6 @@ if uploaded_files:
                     if pd.isna(row['Time_Only']):
                         return '🚫 Absent'
                     if pd.notna(row['Shift_Start']):
-                        # Apply identical +1 minute grace interval to SOC
                         shift_start_dt = datetime.datetime.combine(row['Date'], row['Shift_Start'])
                         cutoff_time = (shift_start_dt + datetime.timedelta(minutes=1)).time()
                         if row['Time_Only'] >= cutoff_time:
@@ -939,7 +918,7 @@ if uploaded_files:
                 st.subheader("Shift Compliance — SOC Team")
                 st.markdown(
                     "Every row is one **scheduled shift**. &nbsp;"
-                    "✅ On Time &nbsp;·&nbsp; ⚠️ Late (arrived after shift start) "
+                    "✅ On Time &nbsp;·&nbsp; ⚠️ Late (arrived after shift start + 1 min grace) "
                     "&nbsp;·&nbsp; 🚫 Absent (no badge-in recorded)."
                 )
 
@@ -1007,3 +986,5 @@ if uploaded_files:
 
     except Exception as e:
         st.error(f"An error occurred while processing: {e}")
+        import traceback
+        st.code(traceback.format_exc())
