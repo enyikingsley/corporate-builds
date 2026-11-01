@@ -15,13 +15,25 @@ import pyotp
 import qrcode
 import time
 
-st.set_page_config(page_title="Attendance Checker", page_icon="🕒", layout="wide")
+# --- Setup Logo & Page Config ---
+LOGO_URL = "https://cdn.prod.website-files.com/679a0d90717922eb8830bfb4/6ad7e88d6bb176ea1ab26c34_esentry%20white%20logo-p-2000.png"
+st.set_page_config(page_title="Attendance Tracker", page_icon=LOGO_URL, layout="wide")
 
 is_auth = st.session_state.get('authenticated', False)
 page_id = "dashboard" if is_auth else "gateway"
 
+# --- Premium UI/UX CSS Overhaul ---
 st.markdown("""
 <style>
+/* Base App Styling (Black Background) */
+.stApp {
+    background-color: #000000 !important;
+    color: #ffffff;
+}
+header[data-testid="stHeader"] {
+    background-color: transparent !important;
+}
+
 /* --- Robust Curtain Animation --- */
 @keyframes curtainLeft {
     0% { right: 50%; opacity: 1; z-index: 9999999; }
@@ -34,8 +46,6 @@ st.markdown("""
     100% { left: 100%; opacity: 0; z-index: -1; visibility: hidden; }
 }
 
-/* Dynamic curtain classes defined below */
-
 /* Smoothen the entrance of the main content */
 .block-container {
     animation: slideUpFade 1.0s ease forwards;
@@ -47,52 +57,71 @@ st.markdown("""
     100% { opacity: 1; transform: translateY(0); }
 }
 
-/* File Uploader Hover Glow */
+/* File Uploader Hover Glow - Navy to Mint */
 [data-testid="stFileUploader"] {
-    border: 1px solid rgba(0, 198, 255, 0.2);
+    border: 1px solid #000047;
     border-radius: 12px;
-    background: rgba(0, 114, 255, 0.02);
+    background: rgba(0, 0, 71, 0.2);
     padding: 10px;
     transition: all 0.3s ease;
 }
 [data-testid="stFileUploader"]:hover {
-    border-color: #00c6ff;
-    background: rgba(0, 198, 255, 0.05);
-    box-shadow: 0 4px 15px rgba(0, 198, 255, 0.1);
+    border-color: #CAEEC8;
+    background: rgba(202, 238, 200, 0.05);
+    box-shadow: 0 4px 15px rgba(202, 238, 200, 0.15);
 }
 
 /* Premium Card Hover Effects */
 div[data-testid="stExpander"] {
-    background-color: rgba(255, 255, 255, 0.02);
+    background-color: rgba(0, 0, 71, 0.3);
     border-radius: 8px;
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    border: 1px solid #000047;
     transition: all 0.3s ease;
 }
 div[data-testid="stExpander"]:hover {
-    border-color: rgba(255, 255, 255, 0.3);
-    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+    border-color: #CAEEC8;
+    box-shadow: 0 4px 15px rgba(202, 238, 200, 0.1);
 }
 
 /* Premium Primary Button */
 .stButton>button {
-    background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
-    color: white !important;
+    background: #000047;
+    color: #CAEEC8 !important;
     border-radius: 8px;
-    border: none;
-    font-weight: bold;
-    transition: transform 0.2s, box-shadow 0.2s;
+    border: 1px solid #000047;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    transition: all 0.3s ease;
 }
 .stButton>button:hover {
     transform: translateY(-2px);
-    box-shadow: 0 4px 15px rgba(42, 82, 152, 0.4);
+    background: #CAEEC8;
+    color: #000000 !important;
+    box-shadow: 0 4px 15px rgba(202, 238, 200, 0.4);
+    border-color: #CAEEC8;
 }
 
 /* Premium DataFrame border */
 div[data-testid="stDataFrame"] {
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    border: 1px solid #000047;
     border-radius: 8px;
     overflow: hidden;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.2) !important;
+    background-color: rgba(0, 0, 71, 0.1);
+    box-shadow: 0 4px 20px rgba(0,0,0,0.5) !important;
+}
+
+/* Custom Tabs Styling */
+button[data-baseweb="tab"] {
+    background-color: transparent !important;
+    color: #888888 !important;
+    font-weight: 600;
+}
+button[data-baseweb="tab"][aria-selected="true"] {
+    color: #CAEEC8 !important;
+    border-bottom-color: #CAEEC8 !important;
+}
+button[data-baseweb="tab"]:hover {
+    color: #ffffff !important;
 }
 
 /* --- Output Pop-up Animations --- */
@@ -104,25 +133,26 @@ div[data-testid="stDataFrame"], .output-alert-box {
     animation: outputPopUp 1.2s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
 }
 
-/* Make headers look slightly crisper */
+/* Headers */
 h1, h2, h3 {
-    font-family: "Inter", sans-serif;
+    font-family: "Inter", -apple-system, sans-serif;
     letter-spacing: -0.5px;
+    color: #ffffff;
 }
 </style>
 """ + f"""
 <style>
 .curtain-panel-left-{page_id} {{
     position: fixed; top: 0; left: 0; right: 50%; bottom: 0;
-    background-color: #0e1117; border-right: 2px solid rgba(0, 198, 255, 0.4);
-    box-shadow: 5px 0 20px rgba(0,0,0,0.5);
+    background-color: #000000; border-right: 2px solid #CAEEC8;
+    box-shadow: 5px 0 20px rgba(0,0,0,0.8);
     animation: curtainLeft 1.2s cubic-bezier(0.86, 0, 0.07, 1) forwards;
     animation-delay: 0.1s; z-index: 9999999; pointer-events: none;
 }}
 .curtain-panel-right-{page_id} {{
     position: fixed; top: 0; left: 50%; right: 0; bottom: 0;
-    background-color: #0e1117; border-left: 2px solid rgba(0, 198, 255, 0.4);
-    box-shadow: -5px 0 20px rgba(0,0,0,0.5);
+    background-color: #000000; border-left: 2px solid #CAEEC8;
+    box-shadow: -5px 0 20px rgba(0,0,0,0.8);
     animation: curtainRight 1.2s cubic-bezier(0.86, 0, 0.07, 1) forwards;
     animation-delay: 0.1s; z-index: 9999999; pointer-events: none;
 }}
@@ -131,19 +161,15 @@ h1, h2, h3 {
 <div class="curtain-panel-right-{page_id}"></div>
 """, unsafe_allow_html=True)
 
-def get_header_html(logo_path, title_text, emoji_fallback, width=40, motto=""):
-    title_style = "background: linear-gradient(135deg, #00c6ff 0%, #0072ff 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-weight: 800; letter-spacing: -1px; line-height: 1.1;"
+def get_header_html(title_text, width=150, motto=""):
+    title_style = "color: #ffffff; font-weight: 800; letter-spacing: -1px; line-height: 1.1;"
     
     motto_html = ""
     if motto:
-        motto_html = f'<div style="margin-top: 8px; font-size: 1.15rem; background: linear-gradient(90deg, #89f7fe 0%, #66a6ff 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; border-left: 2px solid #89f7fe; padding-left: 12px; font-weight: 600; letter-spacing: 0.5px; display: inline-block;">✦ {motto}</div>'
+        motto_html = f'<div style="margin-top: 8px; font-size: 1.15rem; color: #CAEEC8; border-left: 2px solid #CAEEC8; padding-left: 12px; font-weight: 600; letter-spacing: 0.5px; display: inline-block;">✦ {motto}</div>'
 
-    if os.path.exists(logo_path):
-        with open(logo_path, "rb") as f:
-            b64 = base64.b64encode(f.read()).decode()
-        img_html = f'<img src="data:image/jpeg;base64,{b64}" width="{width}" style="margin-right: 18px; border-radius: 8px; box-shadow: 0 4px 15px rgba(0, 114, 255, 0.4); flex-shrink: 0; margin-top: 5px;">'
-        return f'<div style="display: flex; align-items: flex-start; margin-bottom: 2.5rem;">{img_html}<div style="display: flex; flex-direction: column; justify-content: center;"><h1 style="margin: 0; padding: 0; {title_style}">{title_text}</h1>{motto_html}</div></div>'
-    return f'<div style="margin-bottom: 2.5rem;"><h1 style="{title_style} margin: 0 0 10px 0;">{emoji_fallback} {title_text}</h1>{motto_html}</div>'
+    img_html = f'<img src="{LOGO_URL}" width="{width}" style="margin-right: 25px; flex-shrink: 0; margin-top: 5px;">'
+    return f'<div style="display: flex; align-items: center; margin-bottom: 2.5rem; background: rgba(0, 0, 71, 0.2); padding: 20px; border-radius: 12px; border: 1px solid #000047;">{img_html}<div style="display: flex; flex-direction: column; justify-content: center;"><h1 style="margin: 0; padding: 0; {title_style}">{title_text}</h1>{motto_html}</div></div>'
 
 # --- Security Gateway (Google Authenticator) ---
 if 'totp_secret' not in st.session_state:
@@ -151,10 +177,8 @@ if 'totp_secret' not in st.session_state:
 
 if not st.session_state.get('authenticated', False):
     st.markdown(get_header_html(
-        "sentrium_logo.jpg", 
-        "Sentrium Security Gateway", 
-        "🛡️", 
-        width=55, 
+        "Security Gateway", 
+        width=160, 
         motto="We protect and strengthen the digital foundation of businesses"
     ), unsafe_allow_html=True)
     
@@ -209,11 +233,11 @@ def robust_parse_date(series, default_dayfirst=False):
             return pd.to_datetime(series, infer_datetime_format=True, dayfirst=is_dayfirst, errors='coerce')
 
 
-st.markdown(get_header_html("sentrium_logo.jpg", "Sentrium Attendance Tracker", "🕒", width=60), unsafe_allow_html=True)
+st.markdown(get_header_html("Attendance Tracker", width=180), unsafe_allow_html=True)
 
 st.markdown(
-    """<div style="background-color: rgba(0, 114, 255, 0.05); border-left: 4px solid #0072ff; padding: 15px 20px; border-radius: 0 8px 8px 0; margin-bottom: 2rem; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
-    <span style="color: #e2e8f0; font-size: 1.05rem; line-height: 1.5;">Upload your access control logs alongside the <strong style="color: #00c6ff;">Staff Roster</strong> and/or the <strong style="color: #00c6ff;">SOC Schedule</strong> to generate a full attendance report — covering late arrivals and absentees for both departments.</span>
+    """<div style="background-color: #000047; border-left: 4px solid #CAEEC8; padding: 15px 20px; border-radius: 0 8px 8px 0; margin-bottom: 2rem; box-shadow: 0 4px 15px rgba(202,238,200,0.05);">
+    <span style="color: #e2e8f0; font-size: 1.05rem; line-height: 1.5;">Upload your access control logs alongside the <strong style="color: #CAEEC8;">Staff Roster</strong> and/or the <strong style="color: #CAEEC8;">SOC Schedule</strong> to generate a full attendance report — covering late arrivals and absentees for both departments.</span>
     </div>""", unsafe_allow_html=True
 )
 
@@ -432,7 +456,7 @@ if uploaded_files:
                         
             progress_bar.progress((idx + 1) / total_files)
 
-        status_text.markdown("✨ **Files successfully parsed! Consolidating attendance logs...**")
+        status_text.markdown("✨ <strong style='color:#CAEEC8;'>Files successfully parsed! Consolidating attendance logs...</strong>", unsafe_allow_html=True)
         time.sleep(0.5)
         status_text.empty()
         progress_bar.empty()
@@ -592,8 +616,8 @@ if uploaded_files:
 
             if df_late.empty:
                 st.markdown(
-                    '<div class="output-alert-box" style="background:rgba(48,209,88,0.1);border-left:5px solid #30d158;padding:15px 20px;border-radius:6px;margin-bottom:1.5rem;">'
-                    '<h3 style="margin:0;color:#30d158;">Perfect Attendance</h3>'
+                    '<div class="output-alert-box" style="background:rgba(202,238,200,0.1);border-left:5px solid #CAEEC8;padding:15px 20px;border-radius:6px;margin-bottom:1.5rem;">'
+                    '<h3 style="margin:0;color:#CAEEC8;">Perfect Attendance</h3>'
                     '<p style="margin:5px 0 0;color:#e2e8f0;">No standard staff checked in at or after 8:31 AM.</p></div>',
                     unsafe_allow_html=True
                 )
@@ -741,9 +765,9 @@ if uploaded_files:
                     _nc_count = _df_comp[_df_comp['Deficit'] > 0]['Personnel ID'].nunique()
                     if _nc_count == 0:
                         st.markdown(
-                            '<div style="background:rgba(48,209,88,0.1);border-left:5px solid #30d158;'
+                            '<div style="background:rgba(202,238,200,0.1);border-left:5px solid #CAEEC8;'
                             'padding:15px 20px;border-radius:6px;margin-bottom:1.5rem;">'
-                            '<h3 style="margin:0;color:#30d158;">✅ Full Compliance</h3>'
+                            '<h3 style="margin:0;color:#CAEEC8;">✅ Full Compliance</h3>'
                             '<p style="margin:5px 0 0;color:#e2e8f0;">All standard staff met their '
                             'required weekly attendance.</p></div>',
                             unsafe_allow_html=True
@@ -897,10 +921,10 @@ if uploaded_files:
 
                 if not _banner:
                     st.markdown(
-                        '<div class="output-alert-box" style="background:rgba(48,209,88,0.1);'
-                        'border-left:5px solid #30d158;padding:15px 20px;border-radius:6px;'
+                        '<div class="output-alert-box" style="background:rgba(202,238,200,0.1);'
+                        'border-left:5px solid #CAEEC8;padding:15px 20px;border-radius:6px;'
                         'margin-bottom:1.5rem;">'
-                        '<h3 style="margin:0;color:#30d158;">✅ Perfect SOC Compliance!</h3>'
+                        '<h3 style="margin:0;color:#CAEEC8;">✅ Perfect SOC Compliance!</h3>'
                         '<p style="margin:5px 0 0;color:#e2e8f0;">All SOC members were on time '
                         'for every scheduled shift.</p></div>',
                         unsafe_allow_html=True
