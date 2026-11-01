@@ -22,190 +22,235 @@ st.set_page_config(page_title="Attendance Tracker", page_icon=LOGO_URL, layout="
 is_auth = st.session_state.get('authenticated', False)
 page_id = "dashboard" if is_auth else "gateway"
 
-# --- Premium UI/UX CSS Overhaul ---
+# ── PREMIUM UI/UX CSS OVERHAUL ─────────────────────────────────────────────
 st.markdown("""
 <style>
-/* Base App Styling (Black Background) */
+/* --- Core Theme Variables --- */
+:root {
+    --bg-black: #000000;
+    --navy-primary: #000047;
+    --mint-accent: #CAEEC8;
+    --mint-dim: rgba(202, 238, 200, 0.15);
+    --text-main: #ffffff;
+    --text-muted: #a0a0b0;
+}
+
+/* Base App Styling */
 .stApp {
-    background-color: #000000 !important;
-    color: #ffffff;
+    background-color: var(--bg-black) !important;
+    color: var(--text-main);
+    font-family: 'Inter', -apple-system, sans-serif;
 }
 header[data-testid="stHeader"] {
     background-color: transparent !important;
 }
 
-/* --- Robust Curtain Animation --- */
-@keyframes curtainLeft {
-    0% { right: 50%; opacity: 1; z-index: 9999999; }
-    99% { right: 100%; opacity: 0; z-index: 9999999; }
-    100% { right: 100%; opacity: 0; z-index: -1; visibility: hidden; }
-}
-@keyframes curtainRight {
-    0% { left: 50%; opacity: 1; z-index: 9999999; }
-    99% { left: 100%; opacity: 0; z-index: 9999999; }
-    100% { left: 100%; opacity: 0; z-index: -1; visibility: hidden; }
-}
+/* Hide exact Streamlit branding */
+#MainMenu {visibility: hidden;}
+footer {visibility: hidden;}
 
-/* Smoothen the entrance of the main content */
-.block-container {
-    animation: slideUpFade 1.0s ease forwards;
-    animation-delay: 0.1s;
-    opacity: 0;
-}
-@keyframes slideUpFade {
-    0% { opacity: 0; transform: translateY(30px); }
+/* --- Animations --- */
+@keyframes fadeInUp {
+    0% { opacity: 0; transform: translateY(40px); }
     100% { opacity: 1; transform: translateY(0); }
 }
+@keyframes pulseGlow {
+    0% { box-shadow: 0 0 5px var(--mint-dim); }
+    50% { box-shadow: 0 0 20px var(--mint-dim); }
+    100% { box-shadow: 0 0 5px var(--mint-dim); }
+}
+@keyframes slideInRight {
+    from { opacity: 0; transform: translateX(30px); }
+    to { opacity: 1; transform: translateX(0); }
+}
 
-/* File Uploader Hover Glow - Navy to Mint */
+/* Smoothen the entrance of main blocks */
+.block-container {
+    animation: fadeInUp 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+}
+.stTabs {
+    animation: slideInRight 0.6s ease-out forwards;
+}
+
+/* --- Interactive Elements Styling --- */
+
+/* File Uploader */
 [data-testid="stFileUploader"] {
-    border: 1px solid #000047;
-    border-radius: 12px;
-    background: rgba(0, 0, 71, 0.2);
-    padding: 10px;
-    transition: all 0.3s ease;
+    border: 2px dashed var(--navy-primary);
+    border-radius: 16px;
+    background: linear-gradient(145deg, rgba(0,0,71,0.2), rgba(0,0,0,0.8));
+    padding: 20px;
+    transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
 [data-testid="stFileUploader"]:hover {
-    border-color: #CAEEC8;
-    background: rgba(202, 238, 200, 0.05);
-    box-shadow: 0 4px 15px rgba(202, 238, 200, 0.15);
+    border-color: var(--mint-accent);
+    background: rgba(0,0,71,0.5);
+    transform: translateY(-5px);
+    box-shadow: 0 10px 30px rgba(202, 238, 200, 0.1);
+}
+[data-testid="stFileUploader"] small {
+    color: var(--text-muted) !important;
 }
 
-/* Premium Card Hover Effects */
-div[data-testid="stExpander"] {
-    background-color: rgba(0, 0, 71, 0.3);
+/* Buttons */
+.stButton>button, .stDownloadButton>button {
+    background: var(--navy-primary);
+    color: var(--mint-accent) !important;
     border-radius: 8px;
-    border: 1px solid #000047;
-    transition: all 0.3s ease;
-}
-div[data-testid="stExpander"]:hover {
-    border-color: #CAEEC8;
-    box-shadow: 0 4px 15px rgba(202, 238, 200, 0.1);
-}
-
-/* Premium Primary Button */
-.stButton>button {
-    background: #000047;
-    color: #CAEEC8 !important;
-    border-radius: 8px;
-    border: 1px solid #000047;
+    border: 1px solid var(--navy-primary);
     font-weight: 600;
     letter-spacing: 0.5px;
+    padding: 0.5rem 1.5rem;
+    transition: all 0.3s ease;
+    text-transform: uppercase;
+    font-size: 0.85rem;
+}
+.stButton>button:hover, .stDownloadButton>button:hover {
+    transform: translateY(-3px) scale(1.02);
+    background: var(--mint-accent);
+    color: var(--bg-black) !important;
+    box-shadow: 0 8px 25px rgba(202, 238, 200, 0.25);
+    border-color: var(--mint-accent);
+}
+
+/* Inputs & Dropdowns */
+.stTextInput>div>div>input, .stSelectbox>div>div>div {
+    background-color: rgba(0, 0, 71, 0.4) !important;
+    color: var(--text-main) !important;
+    border: 1px solid var(--navy-primary) !important;
+    border-radius: 8px;
     transition: all 0.3s ease;
 }
-.stButton>button:hover {
-    transform: translateY(-2px);
-    background: #CAEEC8;
-    color: #000000 !important;
-    box-shadow: 0 4px 15px rgba(202, 238, 200, 0.4);
-    border-color: #CAEEC8;
+.stTextInput>div>div>input:focus, .stSelectbox>div>div>div:focus-within {
+    border-color: var(--mint-accent) !important;
+    box-shadow: 0 0 10px rgba(202, 238, 200, 0.2) !important;
 }
 
-/* Premium DataFrame border */
-div[data-testid="stDataFrame"] {
-    border: 1px solid #000047;
+/* Radio Buttons */
+div[role="radiogroup"] > label {
+    background: rgba(0,0,71,0.3);
+    padding: 10px 20px;
     border-radius: 8px;
-    overflow: hidden;
-    background-color: rgba(0, 0, 71, 0.1);
-    box-shadow: 0 4px 20px rgba(0,0,0,0.5) !important;
+    border: 1px solid var(--navy-primary);
+    transition: all 0.3s;
+}
+div[role="radiogroup"] > label:hover {
+    border-color: var(--mint-accent);
 }
 
-/* Custom Tabs Styling */
+/* --- Data Presentation --- */
+
+/* DataFrames */
+div[data-testid="stDataFrame"] {
+    border: 1px solid var(--navy-primary);
+    border-radius: 12px;
+    background-color: rgba(0, 0, 71, 0.1);
+    box-shadow: 0 8px 30px rgba(0,0,0,0.6) !important;
+    transition: all 0.4s ease;
+}
+div[data-testid="stDataFrame"]:hover {
+    border-color: rgba(202, 238, 200, 0.3);
+    box-shadow: 0 12px 40px rgba(202, 238, 200, 0.08) !important;
+}
+
+/* Custom Tabs */
 button[data-baseweb="tab"] {
     background-color: transparent !important;
-    color: #888888 !important;
-    font-weight: 600;
+    color: var(--text-muted) !important;
+    font-size: 1.1rem !important;
+    font-weight: 500 !important;
+    padding: 1rem 2rem !important;
+    border-radius: 8px 8px 0 0;
+    transition: color 0.3s ease;
 }
 button[data-baseweb="tab"][aria-selected="true"] {
-    color: #CAEEC8 !important;
-    border-bottom-color: #CAEEC8 !important;
-}
-button[data-baseweb="tab"]:hover {
-    color: #ffffff !important;
+    color: var(--mint-accent) !important;
+    border-bottom: 3px solid var(--mint-accent) !important;
+    background: linear-gradient(0deg, rgba(202,238,200,0.05) 0%, transparent 100%) !important;
 }
 
-/* --- Output Pop-up Animations --- */
-@keyframes outputPopUp {
-    0%, 30% { transform: scale(0.9) translateY(40px); opacity: 0; }
-    100% { transform: scale(1) translateY(0); opacity: 1; }
+/* Alerts and Information Boxes */
+[data-testid="stAlert"] {
+    background-color: rgba(0, 0, 71, 0.3);
+    border: 1px solid var(--navy-primary);
+    color: var(--text-main);
+    border-radius: 12px;
 }
-div[data-testid="stDataFrame"], .output-alert-box {
-    animation: outputPopUp 1.2s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+.stProgress > div > div > div {
+    background-color: var(--mint-accent) !important;
 }
 
-/* Headers */
-h1, h2, h3 {
-    font-family: "Inter", -apple-system, sans-serif;
-    letter-spacing: -0.5px;
-    color: #ffffff;
+/* Pop-up Dashboard Cards */
+.metric-card {
+    background: linear-gradient(135deg, var(--navy-primary) 0%, rgba(0,0,0,1) 100%);
+    border-left: 4px solid var(--mint-accent);
+    padding: 20px 25px;
+    border-radius: 12px;
+    margin-bottom: 2rem;
+    box-shadow: 0 8px 25px rgba(0,0,0,0.5);
+    animation: fadeInUp 0.6s ease-out forwards;
+    transition: transform 0.3s ease;
 }
+.metric-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 12px 30px rgba(202,238,200,0.1);
+}
+.metric-title { margin: 0 0 8px 0; color: var(--mint-accent); font-size: 1.3rem; font-weight: 700; letter-spacing: 0.5px;}
+.metric-sub { margin: 0; color: var(--text-main); font-size: 1rem; line-height: 1.6; font-weight: 300; }
+
+/* Custom Headings */
+h1, h2, h3 { color: var(--text-main); }
+h2 { border-bottom: 1px solid rgba(202,238,200,0.2); padding-bottom: 10px; margin-top: 2rem; font-weight: 300;}
 </style>
-""" + f"""
-<style>
-.curtain-panel-left-{page_id} {{
-    position: fixed; top: 0; left: 0; right: 50%; bottom: 0;
-    background-color: #000000; border-right: 2px solid #CAEEC8;
-    box-shadow: 5px 0 20px rgba(0,0,0,0.8);
-    animation: curtainLeft 1.2s cubic-bezier(0.86, 0, 0.07, 1) forwards;
-    animation-delay: 0.1s; z-index: 9999999; pointer-events: none;
-}}
-.curtain-panel-right-{page_id} {{
-    position: fixed; top: 0; left: 50%; right: 0; bottom: 0;
-    background-color: #000000; border-left: 2px solid #CAEEC8;
-    box-shadow: -5px 0 20px rgba(0,0,0,0.8);
-    animation: curtainRight 1.2s cubic-bezier(0.86, 0, 0.07, 1) forwards;
-    animation-delay: 0.1s; z-index: 9999999; pointer-events: none;
-}}
-</style>
-<div class="curtain-panel-left-{page_id}"></div>
-<div class="curtain-panel-right-{page_id}"></div>
 """, unsafe_allow_html=True)
 
-def get_header_html(title_text, width=150, motto=""):
-    title_style = "color: #ffffff; font-weight: 800; letter-spacing: -1px; line-height: 1.1;"
-    
-    motto_html = ""
-    if motto:
-        motto_html = f'<div style="margin-top: 8px; font-size: 1.15rem; color: #CAEEC8; border-left: 2px solid #CAEEC8; padding-left: 12px; font-weight: 600; letter-spacing: 0.5px; display: inline-block;">✦ {motto}</div>'
 
-    img_html = f'<img src="{LOGO_URL}" width="{width}" style="margin-right: 25px; flex-shrink: 0; margin-top: 5px;">'
-    return f'<div style="display: flex; align-items: center; margin-bottom: 2.5rem; background: rgba(0, 0, 71, 0.2); padding: 20px; border-radius: 12px; border: 1px solid #000047;">{img_html}<div style="display: flex; flex-direction: column; justify-content: center;"><h1 style="margin: 0; padding: 0; {title_style}">{title_text}</h1>{motto_html}</div></div>'
+def get_header_html(title_text, subtitle_text=""):
+    """Generates a premium, animated header component"""
+    return f"""
+    <div style="display: flex; align-items: center; margin-bottom: 2.5rem; background: linear-gradient(90deg, rgba(0,0,71,0.6) 0%, transparent 100%); padding: 25px 30px; border-radius: 16px; border-left: 4px solid #CAEEC8; animation: slideInRight 0.8s ease-out;">
+        <img src="{LOGO_URL}" width="160" style="margin-right: 35px; filter: drop-shadow(0 4px 10px rgba(202,238,200,0.2)); flex-shrink: 0;">
+        <div style="display: flex; flex-direction: column; justify-content: center;">
+            <h1 style="margin: 0; padding: 0; color: #ffffff; font-weight: 800; font-size: 2.4rem; letter-spacing: -1px; text-transform: uppercase;">{title_text}</h1>
+            <div style="margin-top: 10px; font-size: 1.1rem; color: #CAEEC8; font-weight: 400; letter-spacing: 1px;">{subtitle_text}</div>
+        </div>
+    </div>
+    """
 
 # --- Security Gateway (Google Authenticator) ---
 if 'totp_secret' not in st.session_state:
     st.session_state['totp_secret'] = 'JBSWY3DPEBLW64TN'
 
 if not st.session_state.get('authenticated', False):
-    st.markdown(get_header_html(
-        "Security Gateway", 
-        width=160, 
-        motto="We protect and strengthen the digital foundation of businesses"
-    ), unsafe_allow_html=True)
+    st.markdown(get_header_html("Attendance Tracker", "SECURE AUTHENTICATION PORTAL"), unsafe_allow_html=True)
     
-    st.info("Please enter your 6-digit verification code from Google Authenticator.")
+    st.markdown("""
+    <div style="text-align: center; margin-top: 40px;">
+        <h3 style="color: #CAEEC8; font-weight: 300;">Authentication Required</h3>
+        <p style="color: #a0a0b0; margin-bottom: 30px;">Please verify your identity using your 6-digit Google Authenticator code.</p>
+    </div>
+    """, unsafe_allow_html=True)
     
     totp = pyotp.TOTP(st.session_state['totp_secret'])
     
-    with st.form("totp_form"):
-        user_code = st.text_input("Enter 6-digit code", type="password")
-        submit_button = st.form_submit_button("Verify")
-        
-        if submit_button:
-            if totp.verify(user_code):
-                st.session_state['authenticated'] = True
-                st.rerun()
-            else:
-                st.error("Invalid code. Please try again.")
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        with st.form("totp_form", clear_on_submit=True):
+            user_code = st.text_input("Enter Passcode", type="password", placeholder="• • • • • •")
+            submit_button = st.form_submit_button("Authenticate Session")
+            
+            if submit_button:
+                if totp.verify(user_code):
+                    st.session_state['authenticated'] = True
+                    st.rerun()
+                else:
+                    st.error("Authentication failed. Invalid pass-code provided.")
 
     st.stop()
 
 
 # ── Intelligent Date Parser Engine ─────────────────────────────────────────
 def robust_parse_date(series, default_dayfirst=False):
-    """
-    Intelligently determines whether a file uses DD/MM or MM/DD by sniffing 
-    for unambiguous dates (days > 12). Falls back to the default format if entirely ambiguous.
-    """
     if pd.api.types.is_datetime64_any_dtype(series):
         return series
     
@@ -213,7 +258,6 @@ def robust_parse_date(series, default_dayfirst=False):
     s_clean = series.dropna().astype(str).str.strip()
     s_clean = s_clean[s_clean != '']
     
-    # Sniff the format from the first 1000 rows
     for val in s_clean.head(1000):
         m = re.search(r'^(\d{1,2})[/-](\d{1,2})[/-]\d{2,4}', val)
         if m:
@@ -233,15 +277,16 @@ def robust_parse_date(series, default_dayfirst=False):
             return pd.to_datetime(series, infer_datetime_format=True, dayfirst=is_dayfirst, errors='coerce')
 
 
-st.markdown(get_header_html("Attendance Tracker", width=180), unsafe_allow_html=True)
+# ── MAIN DASHBOARD APPLICATION ─────────────────────────────────────────────
+st.markdown(get_header_html("Attendance Tracker", "WORKSPACE INITIALIZATION & ANALYTICS"), unsafe_allow_html=True)
 
 st.markdown(
-    """<div style="background-color: #000047; border-left: 4px solid #CAEEC8; padding: 15px 20px; border-radius: 0 8px 8px 0; margin-bottom: 2rem; box-shadow: 0 4px 15px rgba(202,238,200,0.05);">
-    <span style="color: #e2e8f0; font-size: 1.05rem; line-height: 1.5;">Upload your access control logs alongside the <strong style="color: #CAEEC8;">Staff Roster</strong> and/or the <strong style="color: #CAEEC8;">SOC Schedule</strong> to generate a full attendance report — covering late arrivals and absentees for both departments.</span>
+    """<div style="background-color: rgba(0, 0, 71, 0.4); border-left: 3px solid #CAEEC8; padding: 20px 25px; border-radius: 12px; margin-bottom: 2.5rem; font-size: 1.05rem; font-weight: 300; color: #e2e8f0; line-height: 1.6; box-shadow: 0 4px 15px rgba(0,0,0,0.3);">
+    Synchronize raw access control logs with organizational matrices (Staff Rosters / SOC Schedules) to instantly compute highly accurate compliance metrics, late arrival detections, and absenteeism reporting.
     </div>""", unsafe_allow_html=True
 )
 
-# ── Three-column upload layout ─────────────────────────────────────────────
+# ── Upload UI ──
 up_col1, up_col2, up_col3 = st.columns(3)
 
 with up_col1:
@@ -249,57 +294,52 @@ with up_col1:
         "Access Control Logs",
         type=['csv', 'xlsx', 'xls'],
         accept_multiple_files=True,
-        help="Upload the raw badge-in logs from the door access system"
+        help="System-generated badge-in event logs."
     )
 
 with up_col2:
     roster_file = st.file_uploader(
-        "Standard Staff Master List",
+        "Corporate Staff Roster",
         type=['csv', 'xlsx', 'xls'],
         accept_multiple_files=False,
-        help="Upload the monthly roster for standard staff (Mon–Fri). Enables Absentee tracking."
+        help="Standard Mon-Fri organizational alignment matrix."
     )
 
 with up_col3:
     soc_file = st.file_uploader(
-        "SOC Team Schedule",
+        "SOC Shift Schedule",
         type=['csv', 'xlsx', 'xls'],
         accept_multiple_files=False,
-        help="Upload the SOC team's rotating shift schedule. Enables SOC-specific Late & Absent reporting."
+        help="24/7 rotational schedule matrix."
     )
 
 st.markdown("<br>", unsafe_allow_html=True)
 
-# ── SOC Shift time mapping ──────────────────────────────────────────────────
+# ── Configurations ──
 SOC_SHIFT_TIMES = {
     'morning':   datetime.time(7, 0, 0),
     'afternoon': datetime.time(14, 0, 0),
     'night':     datetime.time(19, 0, 0),
 }
-
-# ── EXACT door names for entry tracking (only these two doors) ─────────────
 ENTRY_DOORS = {
     'main entrance ground flr',
     'main entrance upfloor'
 }
 
-# ── Helper: compact export dropdown ────────────────────────────────────────
+# ── Reusable Component: Compact Export Action ──
 def render_export_dropdown(dataframe, period_label, report_title, report_subtitle, col_widths_pdf, key_prefix):
-    """Renders a compact dropdown with Excel/Word/PDF export options."""
-    with st.popover("Export Report"):
-        # Excel
+    with st.popover("Export Output"):
         buf_xlsx = io.BytesIO()
         with pd.ExcelWriter(buf_xlsx, engine='openpyxl') as writer:
             dataframe.to_excel(writer, index=False, sheet_name=report_title[:31])
         st.download_button(
-            label="Download as Excel (.xlsx)",
+            label="Export Spreadsheet (.xlsx)",
             data=buf_xlsx.getvalue(),
             file_name=f"{key_prefix}_{period_label.replace(' ', '_')}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             key=f"xlsx_{key_prefix}_{period_label}"
         )
 
-        # Word
         doc = Document()
         doc.add_heading(f'{report_title} — {period_label}', level=1)
         doc.add_paragraph(report_subtitle)
@@ -315,14 +355,13 @@ def render_export_dropdown(dataframe, period_label, report_title, report_subtitl
         buf_docx = io.BytesIO()
         doc.save(buf_docx)
         st.download_button(
-            label="Download as Word (.docx)",
+            label="Export Document (.docx)",
             data=buf_docx.getvalue(),
             file_name=f"{key_prefix}_{period_label.replace(' ', '_')}.docx",
             mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             key=f"docx_{key_prefix}_{period_label}"
         )
 
-        # PDF
         pdf = FPDF()
         pdf.add_page(orientation='L')
         pdf.set_font('Helvetica', 'B', 14)
@@ -345,44 +384,44 @@ def render_export_dropdown(dataframe, period_label, report_title, report_subtitl
         pdf_out = pdf.output(dest='S')
         pdf_bytes = pdf_out.encode('latin-1', errors='ignore') if isinstance(pdf_out, str) else bytes(pdf_out)
         st.download_button(
-            label="Download as PDF (.pdf)",
+            label="Export Document (.pdf)",
             data=pdf_bytes,
             file_name=f"{key_prefix}_{period_label.replace(' ', '_')}.pdf",
             mime="application/pdf",
             key=f"pdf_{key_prefix}_{period_label}"
         )
 
-# ── Helper: period filter (All / Daily / Weekly / Monthly) ──────────────────
+# ── Reusable Component: Time Filter ──
 def period_filter(df, date_col, parsed_time_col, radio_key):
-    period = st.radio("View period:", ["All", "Daily", "Weekly", "Monthly"], horizontal=True, key=radio_key)
+    period = st.radio("Temporal Filter:", ["All-Time", "Daily", "Weekly", "Monthly"], horizontal=True, key=radio_key)
     if period == "Daily":
         df['_date_label'] = df[parsed_time_col].dt.date
         opts = sorted(df['_date_label'].unique(), reverse=True)
-        sel = st.selectbox("Select Date", opts, key=f"{radio_key}_sel")
+        sel = st.selectbox("Specify Date", opts, key=f"{radio_key}_sel")
         return df[df['_date_label'] == sel].copy(), f"Day {sel}"
     elif period == "Weekly":
         df['_week'] = df[parsed_time_col].dt.isocalendar().year.astype(str) + '-W' + \
                       df[parsed_time_col].dt.isocalendar().week.astype(str).str.zfill(2)
         opts = sorted(df['_week'].unique(), reverse=True)
-        sel = st.selectbox("Select Week", opts, key=f"{radio_key}_sel")
+        sel = st.selectbox("Specify Week", opts, key=f"{radio_key}_sel")
         return df[df['_week'] == sel].copy(), f"Week {sel}"
     elif period == "Monthly":
         df['_month'] = df[parsed_time_col].dt.to_period('M').astype(str)
         opts = sorted(df['_month'].unique(), reverse=True)
-        sel = st.selectbox("Select Month", opts, key=f"{radio_key}_sel")
+        sel = st.selectbox("Specify Month", opts, key=f"{radio_key}_sel")
         return df[df['_month'] == sel].copy(), f"Month {sel}"
-    return df.copy(), "All Time"
+    return df.copy(), "All Time Data"
 
 
 if uploaded_files:
+    st.markdown("<hr style='border-color: #000047; margin: 10px 0 30px 0;'>", unsafe_allow_html=True)
     progress_bar = st.progress(0)
     status_text = st.empty()
 
     try:
-        # ── STEP 1: Load & normalise access logs ────────────────────────────
+        # ── Data Processing Core ──
         
         def get_norm_col(c):
-            """Robust matcher catching common column name variations across multiple log files."""
             cl = str(c).strip().lower()
             if cl in ['time', 'date/time', 'datetime', 'date time', 'event time']: return 'Time'
             if cl in ['date']: return 'Date'
@@ -395,10 +434,7 @@ if uploaded_files:
             return str(c).strip()
 
         def normalize_columns(df_in):
-            return df_in.rename(columns={
-                c: get_norm_col(c)
-                for c in df_in.columns
-            })
+            return df_in.rename(columns={c: get_norm_col(c) for c in df_in.columns})
 
         def has_required_cols(cols):
             lc = [get_norm_col(c).lower() for c in cols]
@@ -408,14 +444,13 @@ if uploaded_files:
         total_files = len(uploaded_files)
 
         for idx, uf in enumerate(uploaded_files):
-            status_text.markdown(f"**Scanning File {idx + 1} of {total_files}:** `{uf.name}`...")
+            status_text.markdown(f"<span style='color:#CAEEC8; font-weight:600;'>Processing Batch {idx + 1}/{total_files}:</span> `{uf.name}`...", unsafe_allow_html=True)
             
             if uf.name.endswith('.csv'):
                 tmp = pd.read_csv(uf)
                 tmp.columns = tmp.columns.astype(str).str.strip()
                 tmp = normalize_columns(tmp)
                 
-                # Dynamic Stitching of Separated Date/Time Columns
                 if 'Date' in tmp.columns and 'Time' in tmp.columns:
                     mask = tmp['Date'].notna() & tmp['Time'].notna()
                     tmp.loc[mask, 'Time'] = tmp.loc[mask, 'Date'].astype(str).str.split(' ').str[0] + ' ' + tmp.loc[mask, 'Time'].astype(str).str.split(' ').str[-1]
@@ -456,13 +491,13 @@ if uploaded_files:
                         
             progress_bar.progress((idx + 1) / total_files)
 
-        status_text.markdown("✨ <strong style='color:#CAEEC8;'>Files successfully parsed! Consolidating attendance logs...</strong>", unsafe_allow_html=True)
-        time.sleep(0.5)
+        status_text.markdown("✨ <strong style='color:#CAEEC8;'>Compilation Complete. Matrix Initialized.</strong>", unsafe_allow_html=True)
+        time.sleep(0.6)
         status_text.empty()
         progress_bar.empty()
 
         if not all_dfs:
-            st.error("No valid data found in the uploaded log files.")
+            st.error("Engine failed to locate standard chronometric structures in files.")
             st.stop()
 
         df = pd.concat(all_dfs, ignore_index=True)
@@ -484,7 +519,7 @@ if uploaded_files:
 
         for col in ['Time', 'Door Name']:
             if col not in df.columns:
-                st.error(f"Missing required column: **{col}**")
+                st.error(f"Critical schema missing: **{col}**")
                 st.stop()
                 
         if 'Event Description' not in df.columns:
@@ -495,7 +530,6 @@ if uploaded_files:
 
         df['Personnel ID'] = df['Personnel ID'].apply(clean_id)
 
-        # ── Intelligently Parse Access Log Dates ──
         df['Parsed_Time'] = robust_parse_date(df['Time'], default_dayfirst=False)
         df = df.dropna(subset=['Parsed_Time']).copy()
 
@@ -503,7 +537,6 @@ if uploaded_files:
         df['Door Name'] = df['Door Name'].astype(str).str.strip()
         df['Door_Name_Norm'] = df['Door Name'].str.lower().str.strip()
 
-        # EXACT door matching - only the two designated entry doors
         fail_keywords = 'denied|invalid|alarm|error|fail|reject|unregistered|not register|unauthorized|access denied|validate interval'
         
         df_entry = df[
@@ -517,11 +550,9 @@ if uploaded_files:
         df_entry['Time_Only'] = df_entry['Parsed_Time'].dt.time
         df_entry['Date_dt']   = pd.to_datetime(df_entry['Date'])
 
-        # First badge-in per person per day across BOTH entry doors (earliest timestamp wins)
         df_entry = df_entry.sort_values('Parsed_Time')
         df_first = df_entry.drop_duplicates(subset=['Date', 'Personnel ID'], keep='first').copy()
 
-        # ── STEP 2: Load rosters ────────────────────────────────────────────
         def load_simple_excel(file_obj):
             if file_obj.name.endswith('.csv'):
                 return pd.read_csv(file_obj)
@@ -584,17 +615,16 @@ if uploaded_files:
                 df_soc['Full Name'] = df_soc[fn_cols].fillna('').astype(str).apply(
                     lambda r: ' '.join(r).strip(), axis=1) if fn_cols else ''
 
-        # ── STEP 3: Tabs ────────────────────────────────────────────────────
-        st.divider()
-        tab_std, tab_soc = st.tabs(["Standard Staff", "SOC Team"])
+        # ── OUTPUT TABS ────────────────────────────────────────────────────
+        tab_std, tab_soc = st.tabs(["Corporate Staff Analytics", "SOC Operations Matrix"])
 
         # ════════════════════════════════════════════════════════════════════
         # TAB 1 — STANDARD STAFF
         # ════════════════════════════════════════════════════════════════════
         with tab_std:
-
-            CUTOFF = datetime.time(8, 31, 0)  # 08:31 = 08:30 start + 1 min grace
-            WORKDAYS = {0, 1, 2, 3, 4}  # Mon–Fri
+            st.markdown("<br>", unsafe_allow_html=True)
+            CUTOFF = datetime.time(8, 31, 0)
+            WORKDAYS = {0, 1, 2, 3, 4}
 
             soc_ids = soc_ids_from_roster.copy()
             if df_soc is not None:
@@ -603,7 +633,7 @@ if uploaded_files:
             df_std_first = df_first[~df_first['Personnel ID'].astype(str).str.strip().isin(soc_ids)].copy()
 
             # ── Late Arrivals ────────────────────────────────────────────────
-            st.subheader("Late Arrivals — Standard Staff")
+            st.markdown("<h2>Late Arrival Detections</h2>", unsafe_allow_html=True)
 
             df_std_workday = df_std_first[df_std_first['Date_dt'].dt.dayofweek.isin(WORKDAYS)].copy()
             df_late = df_std_workday[df_std_workday['Time_Only'] >= CUTOFF].copy()
@@ -616,16 +646,16 @@ if uploaded_files:
 
             if df_late.empty:
                 st.markdown(
-                    '<div class="output-alert-box" style="background:rgba(202,238,200,0.1);border-left:5px solid #CAEEC8;padding:15px 20px;border-radius:6px;margin-bottom:1.5rem;">'
-                    '<h3 style="margin:0;color:#CAEEC8;">Perfect Attendance</h3>'
-                    '<p style="margin:5px 0 0;color:#e2e8f0;">No standard staff checked in at or after 8:31 AM.</p></div>',
+                    '<div class="metric-card" style="border-left-color: #30d158;">'
+                    '<h3 class="metric-title" style="color:#30d158;">Zero Anomalies Detected</h3>'
+                    '<p class="metric-sub">100% of corporate staff authenticated prior to the 08:31 AM threshold.</p></div>',
                     unsafe_allow_html=True
                 )
             else:
                 st.markdown(
-                    f'<div class="output-alert-box" style="background:rgba(255,69,58,0.1);border-left:5px solid #ff453a;padding:15px 20px;border-radius:6px;margin-bottom:1.5rem;">'
-                    f'<h3 style="margin:0;color:#ff6b6b;">{len(df_late)} Late Check-in Record(s)</h3>'
-                    f'<p style="margin:5px 0 0;color:#e2e8f0;">Standard staff who arrived at or after <strong>8:31 AM</strong> on a working day.</p></div>',
+                    f'<div class="metric-card" style="border-left-color: #ff453a;">'
+                    f'<h3 class="metric-title" style="color:#ff6b6b;">{len(df_late)} Temporal Anomalies Detected</h3>'
+                    f'<p class="metric-sub">Access logs flagged at or following the <strong>08:31 AM</strong> cutoff parameter on designated workdays.</p></div>',
                     unsafe_allow_html=True
                 )
 
@@ -634,7 +664,7 @@ if uploaded_files:
                     df_late_f, period_label_late = period_filter(df_late.copy(), 'Date', 'Parsed_Time', 'std_late_period')
 
                 if df_late_f.empty:
-                    st.info("No late arrivals for the selected period.")
+                    st.info("No anomalies recorded for the isolated timeframe.")
                 else:
                     late_agg = (
                         df_late_f.sort_values(['Date', 'Time_Only'])
@@ -657,27 +687,27 @@ if uploaded_files:
                         late_agg = late_agg[['Personnel ID', 'Full Name', 'Days_Per_Week',
                                             'Times_Late', 'Dates_Late', 'Times_In']]
                         late_agg.columns = ['Personnel ID', 'Full Name', 'Expected/Week',
-                                            'Times Late', 'Dates Late', 'Times In']
+                                            'Frequency', 'Dates Logged', 'Timestamps']
                     else:
                         late_agg = late_agg[['Personnel ID', 'Full Name', 'Times_Late', 'Dates_Late', 'Times_In']]
-                        late_agg.columns = ['Personnel ID', 'Full Name', 'Times Late', 'Dates Late', 'Times In']
+                        late_agg.columns = ['Personnel ID', 'Full Name', 'Frequency', 'Dates Logged', 'Timestamps']
 
                     st.dataframe(late_agg, hide_index=True, use_container_width=True)
 
                     with ex_col:
+                        st.write("") # Spacer
                         render_export_dropdown(
                             late_agg, period_label_late,
-                            "Standard Staff Late Arrivals",
-                            "Personnel who checked in at or after 08:31 AM on working days.",
+                            "Corporate Staff Anomalies",
+                            "Entities violating the 08:31 AM threshold on standard operational days.",
                             [20, 40, 15, 15, 80, 80], "std_late"
                         )
 
             # ── Weekly Attendance Compliance ──────────────────────────────────
-            st.divider()
-            st.subheader("Weekly Attendance Compliance — Standard Staff")
+            st.markdown("<h2>Weekly Compliance Matrix</h2>", unsafe_allow_html=True)
 
             if df_roster is None:
-                st.info("Upload the Standard Staff Master List to enable weekly compliance tracking.")
+                st.info("Dependency Required: Upload Corporate Staff Roster to activate structural compliance computations.")
             else:
                 _name_lkp = {}
                 if 'First Name' in df_first.columns:
@@ -699,7 +729,7 @@ if uploaded_files:
                 _df_att['Time_Str'] = _df_att['Time_Only'].apply(lambda t: t.strftime('%H:%M'))
 
                 if _df_att.empty:
-                    st.info("No workday attendance data found in the uploaded logs.")
+                    st.info("Insufficient chronometric data mapping to standard workdays.")
                 else:
                     _min_dt = _df_att['Parsed_Time'].min()
                     _max_dt = _df_att['Parsed_Time'].max()
@@ -755,8 +785,8 @@ if uploaded_files:
                                 'Expected Days':        _exp,
                                 'Days Present':         _actual,
                                 'Deficit':              _deficit,
-                                'Status':               '✅ Met' if _deficit == 0 else f'⚠️ Short by {_deficit}',
-                                'Days Attended & Times': ', '.join(_att_entries) if _att_entries else '—',
+                                'Status':               '✅ Verified' if _deficit == 0 else f'⚠️ Deficit: {_deficit}',
+                                'Verified Timestamps':  ', '.join(_att_entries) if _att_entries else '—',
                                 'Absent Dates':         ', '.join(_absent) if _absent else '—',
                             })
 
@@ -765,21 +795,16 @@ if uploaded_files:
                     _nc_count = _df_comp[_df_comp['Deficit'] > 0]['Personnel ID'].nunique()
                     if _nc_count == 0:
                         st.markdown(
-                            '<div style="background:rgba(202,238,200,0.1);border-left:5px solid #CAEEC8;'
-                            'padding:15px 20px;border-radius:6px;margin-bottom:1.5rem;">'
-                            '<h3 style="margin:0;color:#CAEEC8;">✅ Full Compliance</h3>'
-                            '<p style="margin:5px 0 0;color:#e2e8f0;">All standard staff met their '
-                            'required weekly attendance.</p></div>',
+                            '<div class="metric-card" style="border-left-color: #30d158;">'
+                            '<h3 class="metric-title" style="color:#30d158;">100% Operational Compliance</h3>'
+                            '<p class="metric-sub">Structural alignment with mandatory operational days successfully verified.</p></div>',
                             unsafe_allow_html=True
                         )
                     else:
                         st.markdown(
-                            f'<div style="background:rgba(255,149,0,0.1);border-left:5px solid #ff9500;'
-                            f'padding:15px 20px;border-radius:6px;margin-bottom:1.5rem;">'
-                            f'<h3 style="margin:0;color:#ff9500;">⚠️ {_nc_count} staff member(s) had '
-                            f'non-compliant weeks</h3>'
-                            f'<p style="margin:5px 0 0;color:#e2e8f0;">Based on required days per week '
-                            f'vs. actual badge-in records.</p></div>',
+                            f'<div class="metric-card" style="border-left-color: #ff9500;">'
+                            f'<h3 class="metric-title" style="color:#ff9500;">⚠️ Deficit Detected: {_nc_count} Entities</h3>'
+                            f'<p class="metric-sub">Calculated divergence between mandatory days requirement and authenticated system badges.</p></div>',
                             unsafe_allow_html=True
                         )
 
@@ -787,22 +812,20 @@ if uploaded_files:
                     _all_wk_opts = sorted(_df_comp['Week'].unique(), reverse=True)
                     with _pf2_col:
                         _comp_view = st.radio(
-                            "View period:", ["All Weeks", "Select Week"],
+                            "Matrix Scope:", ["Global View", "Isolate Week"],
                             horizontal=True, key="comp_period_radio"
                         )
-                    if _comp_view == "Select Week" and _all_wk_opts:
-                        _sel_wk = st.selectbox("Select Week", _all_wk_opts, key="comp_week_sel")
+                    if _comp_view == "Isolate Week" and _all_wk_opts:
+                        _sel_wk = st.selectbox("Specify Iso-Week", _all_wk_opts, key="comp_week_sel")
                         _detail_view = _df_comp[_df_comp['Week'] == _sel_wk].copy()
                     else:
                         _detail_view = _df_comp.copy()
 
-                    st.markdown(
-                        "**Weekly Detail** — badge-in dates & times attended, and Mon–Fri dates "
-                        "absent, per person per week."
-                    )
+                    st.markdown("<p style='color:#a0a0b0; font-size:0.9rem;'><strong>Granular Logs</strong> — Complete timeline of authenticated presence and computed absences.</p>", unsafe_allow_html=True)
                     st.dataframe(_detail_view, hide_index=True, use_container_width=True)
 
-                    st.markdown("**Summary** — aggregate compliance per employee.")
+                    st.markdown("<p style='color:#a0a0b0; font-size:0.9rem; margin-top:20px;'><strong>Aggregated Analytics</strong> — Cross-referenced macro view of individual deficits.</p>", unsafe_allow_html=True)
+                    
                     _nc_wk_list = (
                         _df_comp[_df_comp['Deficit'] > 0]
                         .groupby('Personnel ID')['Week']
@@ -823,16 +846,17 @@ if uploaded_files:
                     _summary['Non-Compliant Weeks'] = _summary['Non-Compliant Weeks'].fillna('—')
                     _summary = _summary.sort_values('Total_Deficit', ascending=False)
                     _summary.columns = [
-                        'Personnel ID', 'Full Name', 'Expected/Week',
-                        'Weeks Non-Compliant', 'Total Deficit Days', 'Non-Compliant Weeks'
+                        'Personnel ID', 'Full Name', 'Target/Week',
+                        'Weeks Flagged', 'Accumulated Deficit', 'Flagged Cycles'
                     ]
                     st.dataframe(_summary, hide_index=True, use_container_width=True)
 
                     with _ex2_col:
+                        st.write("") # Spacer
                         render_export_dropdown(
                             _detail_view, "All Time",
-                            "Weekly Attendance Compliance",
-                            "Standard staff weekly attendance vs. required days per week.",
+                            "Structural Compliance Report",
+                            "Corporate framework verification against system access logs.",
                             [15, 35, 12, 12, 12, 8, 15, 60, 60], "std_compliance"
                         )
 
@@ -840,20 +864,22 @@ if uploaded_files:
         # TAB 2 — SOC TEAM
         # ════════════════════════════════════════════════════════════════════
         with tab_soc:
+            st.markdown("<br>", unsafe_allow_html=True)
             if df_soc is None:
-                st.info("Upload the SOC Team Schedule file to enable the SOC Department report.")
+                st.info("Dependency Required: Upload SOC Shift Schedule to activate continuous operations tracking.")
                 st.markdown("""
-                **Expected columns in the SOC Schedule file:**
-
+                <div style="background: rgba(0,0,71,0.2); padding: 15px; border-radius: 8px; border: 1px solid #000047;">
+                <p style="color:#CAEEC8; margin-top:0;"><strong>Expected Data Architecture:</strong></p>
+                
                 | Personnel ID | First Name | Last Name | Date | Shift |
                 |---|---|---|---|---|
                 | 201 | Jane | Smith | 14/04/2026 | Morning |
-                | 201 | Jane | Smith | 15/04/2026 | Night |
                 | 202 | James | Okoro | 14/04/2026 | Afternoon |
 
-                **Shift options:** `Morning` (07:00) · `Afternoon` (14:00) · `Night` (19:00)
-                > Days off should simply be omitted — do not add a row for days off.
-                """)
+                <small style="color:#a0a0b0;"><b>Shift Parameters:</b> <code>Morning</code> (07:00) · <code>Afternoon</code> (14:00) · <code>Night</code> (19:00)<br>
+                <em>Note: Omit rows entirely for rest cycles (days off).</em></small>
+                </div>
+                """, unsafe_allow_html=True)
             else:
                 _soc_pids = df_soc['Personnel ID'].unique()
                 _soc_logs = df_first[df_first['Personnel ID'].astype(str).str.strip().isin(_soc_pids)].copy()
@@ -883,7 +909,7 @@ if uploaded_files:
                         cutoff_time = (shift_start_dt + datetime.timedelta(minutes=1)).time()
                         if row['Time_Only'] >= cutoff_time:
                             return '⚠️ Late'
-                    return '✅ On Time'
+                    return '✅ Logged'
 
                 def _soc_mins(row):
                     if pd.isna(row['Time_Only']) or pd.isna(row['Shift_Start']):
@@ -904,46 +930,42 @@ if uploaded_files:
                     _sc[['Personnel ID', 'Full Name', 'Date_Str', 'Shift_Title',
                           'Sched_Start_Str', 'Actual_In_Str', 'Status', 'Mins Late']]
                     .rename(columns={
-                        'Date_Str': 'Shift Date', 'Shift_Title': 'Shift',
-                        'Sched_Start_Str': 'Scheduled Start',
-                        'Actual_In_Str':   'Actual Check-in'
+                        'Date_Str': 'Target Date', 'Shift_Title': 'Cycle',
+                        'Sched_Start_Str': 'T-Zero (Expected)',
+                        'Actual_In_Str':   'Recorded Auth'
                     })
-                    .sort_values(['Personnel ID', 'Shift Date'])
+                    .sort_values(['Personnel ID', 'Target Date'])
                 )
 
                 _late_pids = _sc[_sc['Status'] == '⚠️ Late']['Personnel ID'].nunique()
                 _abs_pids  = _sc[_sc['Status'] == '🚫 Absent']['Personnel ID'].nunique()
                 _banner    = []
                 if _late_pids:
-                    _banner.append(f"<strong style='color:#ff9500;'>{_late_pids}</strong> member(s) arrived late")
+                    _banner.append(f"<strong style='color:#ff9500;'>{_late_pids}</strong> operators breached T-Zero")
                 if _abs_pids:
-                    _banner.append(f"<strong style='color:#ff453a;'>{_abs_pids}</strong> member(s) had absences")
+                    _banner.append(f"<strong style='color:#ff453a;'>{_abs_pids}</strong> operators untraceable for shift")
 
                 if not _banner:
                     st.markdown(
-                        '<div class="output-alert-box" style="background:rgba(202,238,200,0.1);'
-                        'border-left:5px solid #CAEEC8;padding:15px 20px;border-radius:6px;'
-                        'margin-bottom:1.5rem;">'
-                        '<h3 style="margin:0;color:#CAEEC8;">✅ Perfect SOC Compliance!</h3>'
-                        '<p style="margin:5px 0 0;color:#e2e8f0;">All SOC members were on time '
-                        'for every scheduled shift.</p></div>',
+                        '<div class="metric-card" style="border-left-color: #CAEEC8;">'
+                        '<h3 class="metric-title" style="color:#CAEEC8;">Flawless Rotational Integrity</h3>'
+                        '<p class="metric-sub">Zero deviations detected across all continuous schedule matrices.</p></div>',
                         unsafe_allow_html=True
                     )
                 else:
                     st.markdown(
-                        f'<div class="output-alert-box" style="background:rgba(255,69,58,0.1);'
-                        f'border-left:5px solid #ff453a;padding:15px 20px;border-radius:6px;'
-                        f'margin-bottom:1.5rem;">'
-                        f'<h3 style="margin:0;color:#ff6b6b;">SOC Shift Compliance Issues</h3>'
-                        f'<p style="margin:5px 0 0;color:#e2e8f0;">{" · ".join(_banner)}</p></div>',
+                        f'<div class="metric-card" style="border-left-color: #ff453a;">'
+                        f'<h3 class="metric-title" style="color:#ff6b6b;">Schedule Deviations Detected</h3>'
+                        f'<p class="metric-sub">{" &nbsp;|&nbsp; ".join(_banner)}</p></div>',
                         unsafe_allow_html=True
                     )
 
-                st.subheader("Shift Compliance — SOC Team")
+                st.markdown("<h2>Continuous Operations Matrix</h2>", unsafe_allow_html=True)
                 st.markdown(
-                    "Every row is one **scheduled shift**. &nbsp;"
-                    "✅ On Time &nbsp;·&nbsp; ⚠️ Late (arrived after shift start + 1 min grace) "
-                    "&nbsp;·&nbsp; 🚫 Absent (no badge-in recorded)."
+                    "<p style='color:#a0a0b0; font-size:0.95rem;'>"
+                    "<strong>Legend:</strong> ✅ Logged &nbsp;·&nbsp; ⚠️ Late (breach of T-Zero + 1 min threshold) "
+                    "&nbsp;·&nbsp; 🚫 Absent (authentication void)."
+                    "</p>", unsafe_allow_html=True
                 )
 
                 _sc_pf_col, _sc_ex_col = st.columns([4, 1])
@@ -953,41 +975,38 @@ if uploaded_files:
                     )
 
                 if _sc_f.empty:
-                    st.info("No SOC shifts found for the selected period.")
+                    st.info("No schedule matrices loaded for the specified temporal bracket.")
                 else:
                     _sc_display = (
                         _sc_f[['Personnel ID', 'Full Name', 'Date_Str', 'Shift_Title',
                                 'Sched_Start_Str', 'Actual_In_Str', 'Status', 'Mins Late']]
                         .rename(columns={
-                            'Date_Str': 'Shift Date', 'Shift_Title': 'Shift',
-                            'Sched_Start_Str': 'Scheduled Start',
-                            'Actual_In_Str':   'Actual Check-in'
+                            'Date_Str': 'Target Date', 'Shift_Title': 'Cycle',
+                            'Sched_Start_Str': 'T-Zero (Expected)',
+                            'Actual_In_Str':   'Recorded Auth'
                         })
-                        .sort_values(['Personnel ID', 'Shift Date'])
+                        .sort_values(['Personnel ID', 'Target Date'])
                     )
                     st.dataframe(_sc_display, hide_index=True, use_container_width=True)
 
                     with _sc_ex_col:
+                        st.write("")
                         render_export_dropdown(
                             _sc_display, _sc_period,
-                            "SOC Team Shift Compliance",
-                            "SOC personnel shift attendance: On Time, Late, or Absent.",
+                            "SOC Operations Audit",
+                            "High-fidelity track of continuous shift authentication events.",
                             [18, 40, 14, 14, 16, 16, 14, 12], "soc_compliance"
                         )
 
-                st.divider()
-                st.subheader("Compliance Summary — SOC Team")
-                st.markdown(
-                    "Aggregated per person: total scheduled shifts, on-time count, "
-                    "late arrivals, absences, and total minutes late."
-                )
+                st.markdown("<h2>Operator Aggregation View</h2>", unsafe_allow_html=True)
+                st.markdown("<p style='color:#a0a0b0; font-size:0.9rem;'>Consolidated performance metrics isolating tardiness duration and total absence volumes.</p>", unsafe_allow_html=True)
 
                 _soc_summary = (
                     _soc_comp_all
                     .groupby(['Personnel ID', 'Full Name'])
                     .agg(
-                        Scheduled_Shifts=('Shift Date', 'count'),
-                        On_Time=('Status',    lambda x: (x == '✅ On Time').sum()),
+                        Scheduled_Shifts=('Target Date', 'count'),
+                        On_Time=('Status',    lambda x: (x == '✅ Logged').sum()),
                         Late=   ('Status',    lambda x: x.str.startswith('⚠️').sum()),
                         Absent= ('Status',    lambda x: (x == '🚫 Absent').sum()),
                         Total_Mins_Late=('Mins Late', 'sum'),
@@ -996,19 +1015,19 @@ if uploaded_files:
                     .sort_values(['Absent', 'Late'], ascending=False)
                 )
                 _soc_summary.columns = [
-                    'Personnel ID', 'Full Name', 'Scheduled Shifts',
-                    'On Time', 'Late', 'Absent', 'Total Mins Late'
+                    'Operator ID', 'Designation (Name)', 'Cycles Assigned',
+                    'Flawless Auth', 'Breaches', 'Void Auths', 'Total Duration Late (m)'
                 ]
                 st.dataframe(_soc_summary, hide_index=True, use_container_width=True)
 
                 render_export_dropdown(
                     _soc_summary, "All Time",
-                    "SOC Team Compliance Summary",
-                    "Per-person SOC shift compliance overview.",
+                    "SOC Operator Macro Analytics",
+                    "Individual aggregate tracking of SOC team integrity.",
                     [18, 40, 20, 14, 14, 14, 20], "soc_summary"
                 )
 
     except Exception as e:
-        st.error(f"An error occurred while processing: {e}")
+        st.error(f"Critical Engine Error: {e}")
         import traceback
         st.code(traceback.format_exc())
