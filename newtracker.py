@@ -222,12 +222,12 @@ if 'totp_secret' not in st.session_state:
     st.session_state['totp_secret'] = 'JBSWY3DPEBLW64TN'
 
 if not st.session_state.get('authenticated', False):
-    st.markdown(get_header_html("Attendance Tracker", "SECURE AUTHENTICATION PORTAL"), unsafe_allow_html=True)
+    st.markdown(get_header_html("Attendance Tracker", "ATTENDACE TRACKING PORTAL"), unsafe_allow_html=True)
     
     st.markdown("""
     <div style="text-align: center; margin-top: 40px;">
         <h3 style="color: #CAEEC8; font-weight: 300;">Authentication Required</h3>
-        <p style="color: #a0a0b0; margin-bottom: 30px;">Please verify your identity using your 6-digit Google Authenticator code.</p>
+        <p style="color: #a0a0b0; margin-bottom: 30px;">Welcome, Identify with your code.</p>
     </div>
     """, unsafe_allow_html=True)
     
@@ -244,7 +244,7 @@ if not st.session_state.get('authenticated', False):
                     st.session_state['authenticated'] = True
                     st.rerun()
                 else:
-                    st.error("Authentication failed. Invalid pass-code provided.")
+                    st.error("Authentication failed. Invalid code provided.👀")
 
     st.stop()
 
