@@ -455,7 +455,10 @@ if uploaded_files:
                     mask = tmp['Date'].notna() & tmp['Time'].notna()
                     tmp.loc[mask, 'Time'] = tmp.loc[mask, 'Date'].astype(str).str.split(' ').str[0] + ' ' + tmp.loc[mask, 'Time'].astype(str).str.split(' ').str[-1]
                 
-                all_dfs.append(tmp)
+                # Drop junk rows early
+                if 'Time' in tmp.columns and 'Door Name' in tmp.columns:
+                    tmp = tmp.dropna(subset=['Time', 'Door Name'], how='any')
+                    all_dfs.append(tmp)
             else:
                 if uf.name.endswith('.xls'):
                     sheets = pd.read_excel(uf, sheet_name=None, engine='xlrd')
@@ -479,14 +482,19 @@ if uploaded_files:
                         if not found:
                             continue
                     
-                    d = d.dropna(how='all').reset_index(drop=True)
                     d = normalize_columns(d)
+                    
+                    # Drop junk rows immediately to prevent concatenation pollution
+                    if 'Time' in d.columns and 'Door Name' in d.columns:
+                        d = d.dropna(subset=['Time', 'Door Name'], how='any').reset_index(drop=True)
+                    else:
+                        continue
                     
                     if 'Date' in d.columns and 'Time' in d.columns:
                         mask = d['Date'].notna() & d['Time'].notna()
                         d.loc[mask, 'Time'] = d.loc[mask, 'Date'].astype(str).str.split(' ').str[0] + ' ' + d.loc[mask, 'Time'].astype(str).str.split(' ').str[-1]
 
-                    if 'Time' in d.columns and 'Door Name' in d.columns:
+                    if not d.empty:
                         all_dfs.append(d)
                         
             progress_bar.progress((idx + 1) / total_files)
@@ -522,11 +530,21 @@ if uploaded_files:
                 st.error(f"Critical schema missing: **{col}**")
                 st.stop()
                 
+        # Correctly fill missing Event Descriptions across all merged sheets
         if 'Event Description' not in df.columns:
             df['Event Description'] = 'Normal Open'
+        else:
+            df['Event Description'] = df['Event Description'].fillna('Normal Open')
 
+        # Correctly map Personnel IDs row-by-row when different sheets use different headers
         if 'Personnel ID' not in df.columns:
-            df['Personnel ID'] = df.get('First Name', df.get('Last Name', pd.Series([""] * len(df))))
+            df['Personnel ID'] = pd.NA
+            
+        if 'First Name' in df.columns:
+            df['Personnel ID'] = df['Personnel ID'].fillna(df['First Name'])
+            
+        if 'Last Name' in df.columns:
+            df['Personnel ID'] = df['Personnel ID'].fillna(df['Last Name'])
 
         df['Personnel ID'] = df['Personnel ID'].apply(clean_id)
 
